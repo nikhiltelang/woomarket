@@ -25,6 +25,9 @@ const Settings = lazy(() => import("@/pages/settings"));
 const Team = lazy(() => import("@/pages/team"));
 const Account = lazy(() => import("@/pages/account"));
 const Plans = lazy(() => import("@/pages/plans"));
+const EmailMarketing = lazy(() => import("@/pages/email-marketing"));
+const SmsMarketing = lazy(() => import("@/pages/sms-marketing"));
+const SystemSettings = lazy(() => import("@/pages/admin/system-settings"));
 const AdminOverview = lazy(() => import("@/pages/admin/overview"));
 const AdminUsers = lazy(() => import("@/pages/admin/users"));
 const AdminChannels = lazy(() => import("@/pages/admin/channels"));
@@ -50,6 +53,8 @@ const routes: RouteDef[] = [
   { path: "/templates", component: Templates, roles: TENANT, permission: "templates:view", channel: true },
   { path: "/campaigns", component: Campaigns, roles: TENANT, permission: "campaigns:view", channel: true },
   { path: "/analytics/campaign/:campaignId", component: CampaignAnalytics, roles: TENANT, permission: "campaigns:view" },
+  { path: "/email-marketing", component: EmailMarketing, roles: TENANT, permission: "email:view", channel: true },
+  { path: "/sms-marketing", component: SmsMarketing, roles: TENANT, permission: "sms:view", channel: true },
   { path: "/settings", component: Settings, roles: TENANT, permission: "settings:view" },
   { path: "/team", component: Team, roles: TENANT, permission: "team:view" },
   { path: "/plans", component: Plans, roles: TENANT },
@@ -59,6 +64,7 @@ const routes: RouteDef[] = [
   { path: "/channels-management", component: AdminChannels, roles: SUPER },
   { path: "/master-subscriptions", component: AdminPlans, roles: SUPER },
   { path: "/app-update", component: AppUpdate, roles: SUPER },
+  { path: "/system-settings", component: SystemSettings, roles: SUPER },
 ];
 
 function Authenticated() {

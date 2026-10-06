@@ -1,5 +1,6 @@
 import { childLogger } from "../lib/logger";
 import { startDueCampaigns } from "../services/campaign.service";
+import { startDueMarketingCampaigns } from "../services/marketing.service";
 import { channelsRepository } from "../repositories/channels.repository";
 import { whatsappFactory } from "../services/whatsapp";
 
@@ -13,6 +14,7 @@ interface Job {
 
 const jobs: Job[] = [
   { key: "scheduled-campaigns", intervalMs: 60_000, run: () => startDueCampaigns() },
+  { key: "scheduled-email-sms-campaigns", intervalMs: 60_000, run: () => startDueMarketingCampaigns() },
   {
     key: "channel-health-monitor",
     intervalMs: 6 * 60 * 60 * 1000,

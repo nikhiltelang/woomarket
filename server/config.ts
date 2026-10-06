@@ -44,6 +44,22 @@ const schema = z.object({
   MESSAGE_QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
 
   APP_UPDATE_ROOT: z.string().optional(),
+
+  // Platform SMTP fallback (used when neither the tenant nor the superadmin saved SMTP settings)
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM_EMAIL: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  SMTP_FROM_NAME: z.string().optional(),
+  SMTP_SECURE: bool,
+  /** Capture emails locally instead of sending (defaults to on outside production when no SMTP is configured). */
+  EMAIL_SIMULATE: z.enum(["true", "false", "1", "0", ""]).optional(),
+  /** Route all SMS through the simulator. */
+  SMS_SIMULATE: bool,
+  MARKETING_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(50),
+  MARKETING_SEND_DELAY_MS: z.coerce.number().int().min(0).default(50),
 });
 
 const parsed = schema.safeParse(process.env);

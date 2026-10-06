@@ -270,3 +270,99 @@ export type TemplateInput = z.infer<typeof templateSchema>;
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 export type CreateTeamMemberInput = z.infer<typeof createTeamMemberSchema>;
+
+// --- Email marketing ----------------------------------------------------------
+
+const optionalEmail = z.string().trim().toLowerCase().email().or(z.literal("")).nullish();
+
+export const smtpConfigSchema = z.object({
+  host: z.string().trim().min(1).max(255),
+  port: z.coerce.number().int().min(1).max(65535),
+  secure: z.boolean().default(false),
+  user: z.string().trim().min(1, "Required").max(255),
+  /** Omit to keep the stored password. */
+  password: z.string().max(500).optional(),
+  fromName: z.string().trim().min(1).max(100),
+  fromEmail: z.string().trim().toLowerCase().email(),
+});
+
+export const emailTemplateSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  category: z.enum(["promotional", "newsletter", "transactional", "announcement"]).default("promotional"),
+  subject: z.string().trim().max(255).nullish(),
+  previewText: z.string().trim().max(255).nullish(),
+  contentHtml: z.string().min(1).max(500_000),
+  contentText: z.string().max(200_000).nullish(),
+});
+
+const csvEmailRows = z
+  .array(z.object({ email: z.string().trim().toLowerCase().email(), name: z.string().trim().max(255).optional() }))
+  .max(50_000);
+
+export const emailCampaignSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255),
+    subject: z.string().trim().min(1, "Subject is required").max(255),
+    previewText: z.string().trim().max(255).nullish(),
+    senderName: z.string().trim().min(1).max(100),
+    replyTo: optionalEmail,
+    contentHtml: z.string().min(1, "Email content is required").max(500_000),
+    contentText: z.string().max(200_000).nullish(),
+    templateId: z.string().uuid().nullish(),
+    targetAudience: z.enum(["all_contacts", "group", "csv"]),
+    targetGroupId: z.string().uuid().nullish(),
+    csvData: csvEmailRows.default([]),
+    scheduledAt: z.coerce.date().nullish(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.targetAudience === "group" && !v.targetGroupId) ctx.addIssue({ code: "custom", path: ["targetGroupId"], message: "Choose a group" });
+    if (v.targetAudience === "csv" && v.csvData.length === 0) ctx.addIssue({ code: "custom", path: ["csvData"], message: "Upload a CSV with an email column" });
+    if (v.scheduledAt && v.scheduledAt.getTime() < Date.now() - 60_000) ctx.addIssue({ code: "custom", path: ["scheduledAt"], message: "Schedule time must be in the future" });
+  });
+
+export const testEmailSchema = z.object({ email: z.string().trim().toLowerCase().email() });
+
+export const marketingStatusSchema = z.object({ status: z.enum(["paused", "sending", "cancelled"]) });
+
+// --- SMS marketing --------------------------------------------------------------
+
+export const smsGatewaySchema = z.discriminatedUnion("provider", [
+  z.object({ provider: z.literal("simulator"), fromNumber: z.string().trim().max(30).optional(), senderId: z.string().trim().max(11).optional() }),
+  z.object({
+    provider: z.literal("twilio"),
+    accountSid: z.string().trim().regex(/^AC[0-9a-fA-F]{32}$/, "Twilio Account SID starts with AC"),
+    authToken: z.string().trim().min(16).max(128).optional(),
+    fromNumber: z.string().trim().regex(/^\+[1-9]\d{6,14}$/, "E.164 number, e.g. +14155550123").or(z.literal("")).optional(),
+    senderId: z.string().trim().regex(/^[A-Za-z0-9 ]{1,11}$/, "Up to 11 letters/digits").or(z.literal("")).optional(),
+  }),
+  z.object({
+    provider: z.literal("vonage"),
+    accountSid: z.string().trim().min(4).max(64),
+    authToken: z.string().trim().min(4).max(128).optional(),
+    fromNumber: z.string().trim().max(30).optional(),
+    senderId: z.string().trim().regex(/^[A-Za-z0-9 ]{1,11}$/, "Up to 11 letters/digits").or(z.literal("")).optional(),
+  }),
+]);
+
+const csvPhoneRows = z.array(z.object({ phone, name: z.string().trim().max(255).optional() })).max(50_000);
+
+export const smsCampaignSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255),
+    message: z.string().trim().min(1, "Message is required").max(1600),
+    targetAudience: z.enum(["all_contacts", "group", "csv"]),
+    targetGroupId: z.string().uuid().nullish(),
+    csvData: csvPhoneRows.default([]),
+    scheduledAt: z.coerce.date().nullish(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.targetAudience === "group" && !v.targetGroupId) ctx.addIssue({ code: "custom", path: ["targetGroupId"], message: "Choose a group" });
+    if (v.targetAudience === "csv" && v.csvData.length === 0) ctx.addIssue({ code: "custom", path: ["csvData"], message: "Upload a CSV with a phone column" });
+    if (v.scheduledAt && v.scheduledAt.getTime() < Date.now() - 60_000) ctx.addIssue({ code: "custom", path: ["scheduledAt"], message: "Schedule time must be in the future" });
+  });
+
+export const testSmsSchema = z.object({ to: phone, message: z.string().trim().min(1).max(1600) });
+export const segmentsSchema = z.object({ message: z.string().max(5000) });
+
+export type EmailCampaignInput = z.infer<typeof emailCampaignSchema>;
+export type SmsCampaignInput = z.infer<typeof smsCampaignSchema>;

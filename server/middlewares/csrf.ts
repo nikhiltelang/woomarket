@@ -15,6 +15,8 @@ const EXEMPT_PREFIXES = [
   "/api/auth/verify-otp",
   "/api/v1/",
   "/api/widget/",
+  "/api/email-marketing/unsubscribe/",
+  "/api/sms-marketing/calculate-segments",
   "/webhook/",
   "/webhooks/",
 ];

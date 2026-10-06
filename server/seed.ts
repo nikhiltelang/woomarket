@@ -9,6 +9,7 @@ import { channelsRepository } from "./repositories/channels.repository";
 import { contactsRepository } from "./repositories/contacts.repository";
 import { groupsRepository } from "./repositories/groups.repository";
 import { countTemplateVariables, templatesRepository } from "./repositories/templates.repository";
+import { emailTemplatesRepository } from "./repositories/email.repository";
 
 const log = logger.child({ module: "seed" });
 
@@ -39,6 +40,51 @@ const PLANS = [
     features: ["Unlimited numbers", "Unlimited contacts", "Unlimited team", "Priority support"],
   },
 ];
+
+const shell = (inner: string) => `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#111827">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">
+${inner}
+<tr><td style="padding:16px 32px;background:#f9fafb;font-size:12px;color:#6b7280;text-align:center">You're receiving this because you're a customer of ours. <a href="{{unsubscribe_url}}" style="color:#6b7280">Unsubscribe</a></td></tr>
+</table></td></tr></table></body></html>`;
+
+const EMAIL_TEMPLATES = [
+  {
+    name: "Promotion",
+    category: "promotional",
+    subject: "{{first_name}}, 20% off ends Sunday",
+    previewText: "Our biggest sale of the season is here.",
+    contentHtml: shell(`<tr><td style="background:#15803d;padding:32px;text-align:center;color:#ffffff"><h1 style="margin:0;font-size:28px">Summer Sale</h1><p style="margin:8px 0 0;font-size:16px">20% off everything until Sunday</p></td></tr>
+<tr><td style="padding:32px;font-size:16px;line-height:1.6">Hi {{first_name}},<br><br>As one of our valued customers you get early access to our biggest sale of the season. Use code <strong>SUMMER20</strong> at checkout.<br><br>
+<a href="https://example.com/sale" style="display:inline-block;background:#15803d;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:bold">Shop the sale</a></td></tr>`),
+  },
+  {
+    name: "Newsletter",
+    category: "newsletter",
+    subject: "What's new this month",
+    previewText: "Product updates, tips and stories from our team.",
+    contentHtml: shell(`<tr><td style="padding:32px 32px 8px"><h1 style="margin:0;font-size:24px">This month at our store</h1></td></tr>
+<tr><td style="padding:8px 32px 32px;font-size:16px;line-height:1.6">Hi {{first_name}},<br><br><strong>New arrivals.</strong> Our autumn collection just landed — see what's new.<br><br><strong>Tip of the month.</strong> Reply to any of our WhatsApp messages to reach a real person in minutes.<br><br><strong>Community.</strong> Thank you for being part of it. See you next month!</td></tr>`),
+  },
+  {
+    name: "Welcome",
+    category: "transactional",
+    subject: "Welcome aboard, {{first_name}}!",
+    previewText: "Here's how to get the most out of your account.",
+    contentHtml: shell(`<tr><td style="padding:32px;font-size:16px;line-height:1.6"><h1 style="margin:0 0 16px;font-size:24px">Welcome, {{first_name}}!</h1>Thanks for joining us. Here are three things to try first:<ol><li>Complete your profile</li><li>Message us on WhatsApp any time</li><li>Watch your inbox for member-only offers</li></ol></td></tr>`),
+  },
+];
+
+/** System email templates available to every tenant. Idempotent. */
+export async function seedEmailTemplates(): Promise<void> {
+  for (const t of EMAIL_TEMPLATES) {
+    if (!(await emailTemplatesRepository.findSystemByName(t.name))) {
+      await emailTemplatesRepository.create({ ...t, userId: null, isSystem: true });
+    }
+  }
+}
 
 /** Inserts initial data. Never modifies existing accounts. Safe to run repeatedly. */
 export async function runSeed(): Promise<void> {
@@ -80,6 +126,7 @@ export async function runSeed(): Promise<void> {
     }
   }
 
+  await seedEmailTemplates();
   if (!config.isProduction) await seedDemoTenant();
 }
 
@@ -126,19 +173,20 @@ async function seedDemoTenant() {
 
   const vip = await groupsRepository.create({ name: "VIP customers", description: "High-value repeat buyers", channelId: channel.id, createdBy: admin.id });
   const people = [
-    ["Priya Sharma", "+919812345601"],
-    ["Liam Johnson", "+14155550102"],
-    ["Sofia Rossi", "+393401234503"],
-    ["Kenji Tanaka", "+819012345604"],
-    ["Amara Okafor", "+2348031234505"],
-    ["Undeliverable Test", "+15555550000"],
+    ["Priya Sharma", "+919812345601", "priya@example.test"],
+    ["Liam Johnson", "+14155550102", "liam@example.test"],
+    ["Sofia Rossi", "+393401234503", "sofia@example.test"],
+    ["Kenji Tanaka", "+819012345604", null],
+    ["Amara Okafor", "+2348031234505", "amara@example.test"],
+    ["Undeliverable Test", "+15555550000", null],
   ];
   await contactsRepository.insertManyIgnoreDuplicates(
-    people.map(([name, phone], i) => ({
+    people.map(([name, phone, email], i) => ({
       channelId: channel.id,
       tenantId: admin.id,
-      name,
-      phone,
+      name: name!,
+      phone: phone!,
+      email,
       groups: i < 3 ? [vip.id] : [],
       tags: i < 3 ? ["vip"] : [],
       source: "seed",

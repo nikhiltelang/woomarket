@@ -64,15 +64,33 @@ export async function connectDatabase(): Promise<void> {
   }
 }
 
-/** Applies the bundled migrations when the database has no application tables yet. */
-export async function migrateIfEmpty(): Promise<boolean> {
+async function tableExists(name: string): Promise<boolean> {
   const [rows] = await pool.query<mysql.RowDataPacket[]>(
-    "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'users'",
+    "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+    [name],
   );
-  if (Number(rows[0]?.n) > 0) return false;
-  log.info("Empty database detected; applying migrations");
-  await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "migrations") });
-  return true;
+  return Number(rows[0]?.n) > 0;
+}
+
+/**
+ * Applies bundled migrations:
+ * - empty database → full schema ("fresh"; the caller seeds it),
+ * - database created by the migrator → pending migrations only ("migrated"),
+ * - database managed with `db:push` (no migrations journal) → left alone ("skipped").
+ */
+export async function applyMigrations(): Promise<"fresh" | "migrated" | "skipped"> {
+  const migrationsFolder = path.resolve(process.cwd(), "migrations");
+  if (!(await tableExists("users"))) {
+    log.info("Empty database detected; applying migrations");
+    await migrate(db, { migrationsFolder });
+    return "fresh";
+  }
+  if (await tableExists("__drizzle_migrations")) {
+    await migrate(db, { migrationsFolder });
+    return "migrated";
+  }
+  log.info("No migrations journal found (schema managed with db:push); skipping migrations");
+  return "skipped";
 }
 
 export async function closeDatabase(): Promise<void> {

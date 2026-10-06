@@ -1,0 +1,24 @@
+import { Router } from "express";
+import * as c from "../controllers/sms-marketing.controller";
+import { requirePermission, requireRole } from "../middlewares/auth";
+import { requireChannelAccess } from "../middlewares/tenant";
+import { asyncHandler as h } from "../lib/http";
+
+export const smsMarketingRoutes = Router();
+const view = requirePermission("sms:view");
+const send = requirePermission("sms:send");
+smsMarketingRoutes.use(requireRole("admin", "team"));
+smsMarketingRoutes.get("/campaigns", view, h(c.listCampaigns));
+smsMarketingRoutes.post("/campaigns", send, requireChannelAccess(), h(c.createCampaign));
+smsMarketingRoutes.get("/campaigns/:id", view, h(c.getCampaign));
+smsMarketingRoutes.put("/campaigns/:id", send, h(c.updateCampaign));
+smsMarketingRoutes.delete("/campaigns/:id", send, h(c.deleteCampaign));
+smsMarketingRoutes.post("/campaigns/:id/send", send, h(c.sendCampaign));
+smsMarketingRoutes.patch("/campaigns/:id/status", send, h(c.updateStatus));
+smsMarketingRoutes.get("/campaigns/:id/recipients", view, h(c.recipients));
+smsMarketingRoutes.get("/audience", view, h(c.audienceCount));
+smsMarketingRoutes.post("/test", send, h(c.testSms));
+smsMarketingRoutes.get("/templates", view, c.templates);
+smsMarketingRoutes.get("/gateway", view, h(c.getGateway));
+smsMarketingRoutes.post("/gateway", requireRole("admin"), requirePermission("settings:edit"), h(c.saveGateway));
+smsMarketingRoutes.get("/analytics", view, h(c.analytics));

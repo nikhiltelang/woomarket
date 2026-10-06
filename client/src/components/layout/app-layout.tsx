@@ -8,6 +8,9 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  Mail,
+  MessageSquareText,
+  SlidersHorizontal,
   Megaphone,
   Menu,
   MessageSquare,
@@ -25,6 +28,7 @@ import { useChannel } from "@/contexts/channel";
 import { useSocket, useSocketEvent } from "@/contexts/socket";
 import { cn, displayName } from "@/lib/utils";
 import { Avatar } from "@/components/ui/display";
+import { useToast } from "@/components/ui/overlay";
 import { queryClient } from "@/lib/api";
 
 interface NavItem {
@@ -55,7 +59,10 @@ function useNav(): { title: string; items: NavItem[] }[] {
       },
       {
         title: "System",
-        items: [{ href: "/app-update", label: "Application Update", icon: <RefreshCw className="h-4 w-4" /> }],
+        items: [
+          { href: "/system-settings", label: "System settings", icon: <SlidersHorizontal className="h-4 w-4" /> },
+          { href: "/app-update", label: "Application Update", icon: <RefreshCw className="h-4 w-4" /> },
+        ],
       },
     ];
   }
@@ -69,6 +76,13 @@ function useNav(): { title: string; items: NavItem[] }[] {
         { href: "/groups", label: "Groups", icon: <UsersRound className="h-4 w-4" />, permission: "contacts:view" },
         { href: "/templates", label: "Templates", icon: <FileText className="h-4 w-4" />, permission: "templates:view" },
         { href: "/campaigns", label: "Campaigns", icon: <Megaphone className="h-4 w-4" />, permission: "campaigns:view" },
+      ],
+    },
+    {
+      title: "Marketing",
+      items: [
+        { href: "/email-marketing", label: "Email marketing", icon: <Mail className="h-4 w-4" />, permission: "email:view" },
+        { href: "/sms-marketing", label: "SMS marketing", icon: <MessageSquareText className="h-4 w-4" />, permission: "sms:view" },
       ],
     },
     {
@@ -108,8 +122,10 @@ function ChannelSwitcher() {
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout, can } = useAuth();
   const { connected } = useSocket();
-  const [location, navigate] = useLocation();
+  const [location] = useLocation();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const toast = useToast();
   const groups = useNav();
 
   useSocketEvent("conversation_updated", () => void queryClient.invalidateQueries({ queryKey: ["/api/conversations/unread-count"] }));
@@ -164,12 +180,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </Link>
         <button
           onClick={async () => {
-            await logout();
-            navigate("/login");
+            setSigningOut(true);
+            try {
+              await logout();
+            } catch (err) {
+              setSigningOut(false);
+              toast({ title: "Couldn't sign out", description: (err as Error).message, variant: "error" });
+            }
           }}
-          className="mt-1 flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm text-fg-muted hover:bg-subtle hover:text-fg"
+          disabled={signingOut}
+          className="mt-1 flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm text-fg-muted hover:bg-subtle hover:text-fg disabled:opacity-60"
         >
-          <LogOut className="h-4 w-4" /> Sign out
+          <LogOut className="h-4 w-4" /> {signingOut ? "Signing out…" : "Sign out"}
         </button>
       </div>
     </nav>

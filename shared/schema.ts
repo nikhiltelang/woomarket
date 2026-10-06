@@ -550,6 +550,169 @@ export const updateRunEvents = mysqlTable(
   (t) => [index("update_run_events_run_id_idx").on(t.runId, t.id)],
 );
 
+// ---------------------------------------------------------------------------
+// Email & SMS marketing
+// ---------------------------------------------------------------------------
+
+export const smtpConfig = mysqlTable("smtp_config", {
+  id: id(),
+  /** Tenant admin id; NULL is the platform-wide default managed by the superadmin. */
+  userId: char("user_id", { length: 36 }).references(() => users.id, { onDelete: "cascade" }),
+  host: text("host").notNull(),
+  port: int("port").notNull(),
+  secure: boolean("secure").default(false),
+  user: text("user").notNull(),
+  password: text("password"),
+  fromName: text("from_name").notNull(),
+  fromEmail: text("from_email").notNull(),
+  logo: text("logo").$defaultFn(() => "null"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const emailTemplates = mysqlTable("email_templates", {
+  id: id(),
+  userId: char("user_id", { length: 36 }).references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category").$defaultFn(() => "promotional"),
+  subject: text("subject"),
+  previewText: text("preview_text"),
+  contentHtml: text("content_html").notNull(),
+  contentText: text("content_text"),
+  isSystem: boolean("is_system").default(false),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const emailCampaigns = mysqlTable(
+  "email_campaigns",
+  {
+    id: id(),
+    /** Owning tenant (admin id), so the whole team shares campaigns. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channelId: varchar("channel_id", { length: 255 }),
+    name: text("name").notNull(),
+    subject: text("subject").notNull(),
+    previewText: text("preview_text"),
+    senderName: text("sender_name").$defaultFn(() => "Cortesys Marketing"),
+    senderEmail: text("sender_email"),
+    replyTo: text("reply_to"),
+    contentHtml: text("content_html").notNull(),
+    contentText: text("content_text"),
+    templateId: varchar("template_id", { length: 255 }),
+    targetAudience: text("target_audience").$defaultFn(() => "all_contacts"),
+    targetGroupId: varchar("target_group_id", { length: 255 }),
+    targetGroupName: text("target_group_name"),
+    csvData: jsonArray<{ email: string; name?: string }>("csv_data"),
+    status: varchar("status", { length: 255 }).default("draft"),
+    scheduledAt: ts("scheduled_at"),
+    sentAt: ts("sent_at"),
+    totalRecipients: int("total_recipients").default(0),
+    sentCount: int("sent_count").default(0),
+    deliveredCount: int("delivered_count").default(0),
+    openedCount: int("opened_count").default(0),
+    clickedCount: int("clicked_count").default(0),
+    failedCount: int("failed_count").default(0),
+    errorMessage: text("error_message"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("email_campaigns_user_idx").on(t.userId), index("email_campaigns_status_idx").on(t.status)],
+);
+
+export const emailCampaignRecipients = mysqlTable(
+  "email_campaign_recipients",
+  {
+    id: id(),
+    campaignId: char("campaign_id", { length: 36 })
+      .notNull()
+      .references(() => emailCampaigns.id, { onDelete: "cascade" }),
+    contactId: varchar("contact_id", { length: 255 }),
+    email: text("email").notNull(),
+    name: text("name"),
+    status: varchar("status", { length: 255 }).default("pending"),
+    sentAt: ts("sent_at"),
+    deliveredAt: ts("delivered_at"),
+    openedAt: ts("opened_at"),
+    errorMessage: text("error_message"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("email_recipients_campaign_idx").on(t.campaignId), index("email_recipients_status_idx").on(t.status)],
+);
+
+export const smsGateways = mysqlTable("sms_gateways", {
+  id: id(),
+  userId: char("user_id", { length: 36 }).references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider")
+    .notNull()
+    .$defaultFn(() => "simulator"),
+  accountSid: text("account_sid"),
+  authToken: text("auth_token"),
+  fromNumber: text("from_number").$defaultFn(() => "+18005550199"),
+  senderId: text("sender_id").$defaultFn(() => "CORTESYS"),
+  webhookUrl: text("webhook_url"),
+  isActive: boolean("is_active").default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const smsCampaigns = mysqlTable(
+  "sms_campaigns",
+  {
+    id: id(),
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channelId: varchar("channel_id", { length: 255 }),
+    name: text("name").notNull(),
+    senderId: text("sender_id").$defaultFn(() => "CORTESYS"),
+    fromNumber: text("from_number"),
+    message: text("message").notNull(),
+    mediaUrl: text("media_url"),
+    gateway: text("gateway").$defaultFn(() => "simulator"),
+    targetAudience: text("target_audience").$defaultFn(() => "all_contacts"),
+    targetGroupId: varchar("target_group_id", { length: 255 }),
+    targetGroupName: text("target_group_name"),
+    csvData: jsonArray<{ phone: string; name?: string }>("csv_data"),
+    status: varchar("status", { length: 255 }).default("draft"),
+    scheduledAt: ts("scheduled_at"),
+    sentAt: ts("sent_at"),
+    totalRecipients: int("total_recipients").default(0),
+    sentCount: int("sent_count").default(0),
+    deliveredCount: int("delivered_count").default(0),
+    failedCount: int("failed_count").default(0),
+    smsSegmentsPerRecipient: int("sms_segments_per_recipient").default(1),
+    estimatedCredits: int("estimated_credits").default(0),
+    errorMessage: text("error_message"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("sms_campaigns_user_idx").on(t.userId), index("sms_campaigns_status_idx").on(t.status)],
+);
+
+export const smsCampaignRecipients = mysqlTable(
+  "sms_campaign_recipients",
+  {
+    id: id(),
+    campaignId: char("campaign_id", { length: 36 })
+      .notNull()
+      .references(() => smsCampaigns.id, { onDelete: "cascade" }),
+    contactId: varchar("contact_id", { length: 255 }),
+    phone: text("phone").notNull(),
+    name: text("name"),
+    segments: int("segments").default(1),
+    status: varchar("status", { length: 255 }).default("pending"),
+    sentAt: ts("sent_at"),
+    deliveredAt: ts("delivered_at"),
+    messageId: text("message_id"),
+    errorMessage: text("error_message"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("sms_recipients_campaign_idx").on(t.campaignId), index("sms_recipients_status_idx").on(t.status)],
+);
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -572,6 +735,13 @@ export const MANAGED_TABLES = [
   "subscriptions",
   "update_runs",
   "update_run_events",
+  "smtp_config",
+  "email_templates",
+  "email_campaigns",
+  "email_campaign_recipients",
+  "sms_gateways",
+  "sms_campaigns",
+  "sms_campaign_recipients",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -595,3 +765,10 @@ export type Subscription = InferSelectModel<typeof subscriptions>;
 export type UpdateRun = InferSelectModel<typeof updateRuns>;
 export type UpdateRunEvent = InferSelectModel<typeof updateRunEvents>;
 export type ActivityLog = InferSelectModel<typeof userActivityLogs>;
+export type SmtpConfig = InferSelectModel<typeof smtpConfig>;
+export type EmailTemplate = InferSelectModel<typeof emailTemplates>;
+export type EmailCampaign = InferSelectModel<typeof emailCampaigns>;
+export type EmailRecipient = InferSelectModel<typeof emailCampaignRecipients>;
+export type SmsGateway = InferSelectModel<typeof smsGateways>;
+export type SmsCampaign = InferSelectModel<typeof smsCampaigns>;
+export type SmsRecipient = InferSelectModel<typeof smsCampaignRecipients>;

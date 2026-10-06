@@ -4,11 +4,13 @@ import fs from "node:fs";
 import express, { type Express } from "express";
 import { config, sessionSecret } from "./config";
 import { logger } from "./lib/logger";
-import { closeDatabase, connectDatabase, migrateIfEmpty } from "./db";
+import { applyMigrations, closeDatabase, connectDatabase } from "./db";
+import { runStartupMigrations } from "./startup-migration";
 import { createApp } from "./app";
 import { MySqlSessionStore } from "./session-store";
 import { attachRealtime, closeRealtime } from "./services/realtime";
 import { messageQueueWorker } from "./services/message-queue";
+import { marketingWorker } from "./services/marketing-worker";
 import { startScheduler, stopScheduler } from "./cron/scheduler";
 import { reconcileStaleRuns } from "./app-update/reconciler";
 import { runSeed } from "./seed";
@@ -59,7 +61,8 @@ async function attachClient(app: Express, server: http.Server) {
 async function main() {
   sessionSecret(); // refuses to start in production without a real secret
   await connectDatabase();
-  if (await migrateIfEmpty()) await runSeed();
+  if ((await applyMigrations()) === "fresh") await runSeed();
+  await runStartupMigrations();
 
   const sessionStore = new MySqlSessionStore();
   const { app, sessionMiddleware } = createApp({ sessionStore });
@@ -73,6 +76,7 @@ async function main() {
   if (config.isCronLeader) {
     await reconcileStaleRuns().catch((err) => logger.error({ err }, "Update-run reconciler failed"));
     messageQueueWorker.start();
+    await marketingWorker.start();
     startScheduler();
   }
 
@@ -88,6 +92,7 @@ async function main() {
     force.unref();
     stopScheduler();
     await messageQueueWorker.stop();
+    await marketingWorker.stop();
     await closeRealtime();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     server.closeAllConnections?.();

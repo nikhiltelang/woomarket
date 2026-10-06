@@ -12,7 +12,8 @@ export const apiRateLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: json("Too many requests, please slow down."),
-  skip: () => config.isTest,
+  // Mail providers fetch tracking pixels from shared proxy IPs.
+  skip: (req: Request) => config.isTest || req.originalUrl.startsWith("/api/email-marketing/o/"),
 });
 
 /** Brute-force protection for credential endpoints. */

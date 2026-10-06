@@ -36,6 +36,10 @@ export const PERMISSIONS = {
   SETTINGS_VIEW: "settings:view",
   SETTINGS_EDIT: "settings:edit",
   AUTOMATIONS_VIEW: "automations:view",
+  EMAIL_VIEW: "email:view",
+  EMAIL_SEND: "email:send",
+  SMS_VIEW: "sms:view",
+  SMS_SEND: "sms:send",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -49,6 +53,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
   { label: "Templates", permissions: ["templates:view", "templates:create", "templates:edit", "templates:delete", "templates:sync"] },
   { label: "Campaigns", permissions: ["campaigns:view", "campaigns:create", "campaigns:edit", "campaigns:delete", "campaigns:send"] },
   { label: "Team", permissions: ["team:view", "team:create", "team:edit", "team:delete", "team:permissions"] },
+  { label: "Email & SMS", permissions: ["email:view", "email:send", "sms:view", "sms:send"] },
   { label: "Analytics", permissions: ["analytics:view", "analytics:export"] },
   { label: "Settings", permissions: ["settings:view", "settings:edit", "automations:view"] },
 ];
@@ -61,6 +66,8 @@ export const DEFAULT_TEAM_PERMISSIONS: Permission[] = [
   "templates:view",
   "campaigns:view",
   "analytics:view",
+  "email:view",
+  "sms:view",
 ];
 
 /** Permissions a team member may never receive (they stay with the tenant admin). */

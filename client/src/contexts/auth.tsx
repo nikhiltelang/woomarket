@@ -47,8 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const onAuthenticated = async (res: LoginResponse) => {
     setCsrfToken(res.csrfToken);
-    queryClient.clear();
-    await queryClient.fetchQuery({ queryKey: ME_KEY });
+    // Drop the previous account's cached data, but keep the "me" query itself: the
+    // provider's observer is attached to it, so refetching it updates `user` in place.
+    // (queryClient.clear() would detach the observer and leave a stale user in context.)
+    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== ME_KEY[0] });
+    await queryClient.fetchQuery({ queryKey: ME_KEY, staleTime: 0 });
     return res;
   };
 
@@ -69,10 +72,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login: (username, password) => loginMutation.mutateAsync({ username, password }),
     signup: (input) => signupMutation.mutateAsync(input),
     logout: async () => {
-      await apiRequest("POST", "/api/auth/logout").catch(() => {});
+      try {
+        await apiRequest("POST", "/api/auth/logout");
+      } catch (err) {
+        // 401: the session had already expired — that's a successful sign-out too.
+        if (!(err instanceof ApiError && err.status === 401)) throw err;
+      }
       setCsrfToken(null);
-      queryClient.clear();
-      queryClient.setQueryData(ME_KEY, null);
+      // Full navigation discards every in-memory cache, the socket connection and any
+      // stale context, so nothing from this session survives into the next one.
+      window.location.replace("/login");
     },
     can: (...permissions) => hasPermission(user?.permissions, ...permissions),
     refresh: () => void me.refetch(),
