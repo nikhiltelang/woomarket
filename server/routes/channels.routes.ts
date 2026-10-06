@@ -1,0 +1,18 @@
+import { Router } from "express";
+import * as c from "../controllers/channels.controller";
+import { requirePermission, requireRole } from "../middlewares/auth";
+import { requireChannelAccess } from "../middlewares/tenant";
+import { requireSubscription } from "../middlewares/subscription";
+import { asyncHandler as h } from "../lib/http";
+
+export const channelRoutes = Router();
+const tenant = requireRole("admin", "team");
+channelRoutes.get("/channels/all", requireRole("superadmin"), h(c.listAllChannels));
+channelRoutes.get("/admin/channels", requireRole("superadmin"), h(c.listAllChannels));
+channelRoutes.get("/channels", tenant, h(c.listChannels));
+channelRoutes.get("/channels/active", tenant, h(c.activeChannel));
+channelRoutes.post("/channels", requireRole("admin"), requirePermission("settings:edit"), requireSubscription("channel"), h(c.createChannel));
+channelRoutes.put("/channels/:id", requirePermission("settings:edit"), requireChannelAccess("id"), h(c.updateChannel));
+channelRoutes.delete("/channels/:id", requireRole("admin"), requirePermission("settings:edit"), requireChannelAccess("id"), h(c.deleteChannel));
+channelRoutes.post("/channels/:id/health", requirePermission("settings:view"), requireChannelAccess("id"), h(c.checkHealth));
+channelRoutes.post("/channels/:id/simulate-inbound", requirePermission("settings:view"), requireChannelAccess("id"), h(c.simulateInbound));

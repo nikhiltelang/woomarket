@@ -1,12 +1,12 @@
 node_modules/
+dist/
+dist-release/
+coverage/
 .env
 .env.*
 !.env.example
 .update-temp/
 .update-backups/
-.update-runs.json
-.update-runs.json.tmp
-dist/
-dist-release/
 uploads/
+*.log
 .DS_Store

@@ -1,0 +1,22 @@
+import { Router } from "express";
+import * as c from "../controllers/conversations.controller";
+import { requirePermission } from "../middlewares/auth";
+import { requireChannelAccess } from "../middlewares/tenant";
+import { asyncHandler as h } from "../lib/http";
+
+export const conversationRoutes = Router();
+const view = requirePermission("inbox:view");
+const send = requirePermission("inbox:send");
+conversationRoutes.get("/unread-count", h(c.unreadCount));
+conversationRoutes.get("/pins", view, h(c.listPins));
+conversationRoutes.get("/", view, requireChannelAccess(), h(c.listConversations));
+conversationRoutes.post("/", send, h(c.createConversation));
+conversationRoutes.get("/:conversationId/messages", view, h(c.listMessages));
+conversationRoutes.post("/:conversationId/messages", send, h(c.sendMessage));
+conversationRoutes.post("/:id/pin", view, h(c.pin));
+conversationRoutes.delete("/:id/pin", view, h(c.unpin));
+conversationRoutes.put("/:id/read", view, h(c.markRead));
+conversationRoutes.patch("/:id/status", send, h(c.updateStatus));
+conversationRoutes.get("/:id", view, h(c.getConversation));
+conversationRoutes.put("/:id", requirePermission("inbox:assign"), h(c.updateConversation));
+conversationRoutes.delete("/:id", requirePermission("inbox:assign"), h(c.deleteConversation));

@@ -1,0 +1,34 @@
+# Reverse proxy for WooMarket360 (TLS terminated here; app on 127.0.0.1:3000)
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name app.example.com;
+
+  ssl_certificate     /etc/letsencrypt/live/app.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem;
+
+  client_max_body_size 512m;   # release ZIPs for the in-app updater
+
+  location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;     # required for Secure cookies
+    proxy_set_header Upgrade $http_upgrade;         # Socket.IO websockets
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 600s;                        # long-running update SSE stream
+    proxy_buffering off;                            # stream SSE events immediately
+  }
+}
+
+server {
+  listen 80;
+  server_name app.example.com;
+  return 301 https://$host$request_uri;
+}

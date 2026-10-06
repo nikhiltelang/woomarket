@@ -1,0 +1,250 @@
+import crypto from "node:crypto";
+import { webhookDedup, type Channel, type Conversation, type Message } from "@shared/schema";
+import { db } from "../db";
+import { config } from "../config";
+import { channelsRepository } from "../repositories/channels.repository";
+import { contactsRepository } from "../repositories/contacts.repository";
+import { conversationsRepository, messagesRepository } from "../repositories/conversations.repository";
+import { campaignsRepository } from "../repositories/campaigns.repository";
+import { templatesRepository } from "../repositories/templates.repository";
+import { childLogger } from "../lib/logger";
+import { timingSafeEqualStr } from "../lib/crypto";
+import { realtime } from "./realtime";
+import { setSimulatorSink } from "./whatsapp/simulator-client";
+
+const log = childLogger("webhook");
+
+const STATUS_RANK: Record<string, number> = { pending: 0, queued: 0, sent: 1, delivered: 2, read: 3 };
+
+/** Verifies Meta's X-Hub-Signature-256 header against the raw request body. */
+export function verifySignature(rawBody: Buffer | undefined, header: string | undefined, secret = config.WHATSAPP_APP_SECRET) {
+  if (!secret) return !config.isProduction; // unsigned webhooks are only accepted outside production
+  if (!rawBody || !header?.startsWith("sha256=")) return false;
+  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+  return timingSafeEqualStr(header.slice(7), expected);
+}
+
+const normalizePhone = (waId: string) => `+${waId.replace(/\D/g, "")}`;
+
+interface InboundMessage {
+  id: string;
+  from: string;
+  timestamp?: string;
+  type: string;
+  context?: { id?: string };
+  text?: { body?: string };
+  image?: { id?: string; mime_type?: string; caption?: string; sha256?: string };
+  video?: { id?: string; mime_type?: string; caption?: string; sha256?: string };
+  audio?: { id?: string; mime_type?: string; sha256?: string };
+  document?: { id?: string; mime_type?: string; caption?: string; filename?: string; sha256?: string };
+  sticker?: { id?: string; mime_type?: string };
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
+  button?: { text?: string; payload?: string };
+  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  reaction?: { emoji?: string; message_id?: string };
+}
+
+function describe(msg: InboundMessage): { content: string; media?: { id?: string; mime?: string; sha?: string } } {
+  switch (msg.type) {
+    case "text":
+      return { content: msg.text?.body ?? "" };
+    case "image":
+    case "video":
+    case "audio":
+    case "document":
+    case "sticker": {
+      const m = (msg as any)[msg.type] ?? {};
+      return {
+        content: m.caption || m.filename || `[${msg.type}]`,
+        media: { id: m.id, mime: m.mime_type, sha: m.sha256 },
+      };
+    }
+    case "location":
+      return { content: `📍 ${msg.location?.name ?? ""} ${msg.location?.latitude},${msg.location?.longitude}`.trim() };
+    case "button":
+      return { content: msg.button?.text ?? "[button]" };
+    case "interactive":
+      return { content: msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? "[interactive]" };
+    case "reaction":
+      return { content: `Reacted ${msg.reaction?.emoji ?? ""}` };
+    default:
+      return { content: `[${msg.type}]` };
+  }
+}
+
+async function handleInbound(channel: Channel, msg: InboundMessage, profiles: { wa_id: string; profile?: { name?: string } }[]) {
+  const [dedup] = await db.insert(webhookDedup).ignore().values({ wamid: msg.id });
+  if (dedup.affectedRows === 0) {
+    log.debug({ wamid: msg.id }, "Duplicate inbound message skipped");
+    return;
+  }
+
+  const phone = normalizePhone(msg.from);
+  const profileName = profiles.find((p) => p.wa_id === msg.from)?.profile?.name;
+  const at = msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
+
+  let contact = await contactsRepository.findByPhone(channel.id, phone);
+  if (!contact) {
+    contact = await contactsRepository.create({
+      channelId: channel.id,
+      tenantId: channel.createdBy,
+      name: profileName || phone,
+      phone,
+      source: "whatsapp",
+      lastContact: at,
+    });
+  } else {
+    await contactsRepository.update(contact.id, { lastContact: at });
+  }
+
+  let conversation: Conversation | undefined = await conversationsRepository.findByChannelAndPhone(channel.id, phone);
+  let created = false;
+  if (!conversation) {
+    conversation = await conversationsRepository.create({
+      channelId: channel.id,
+      contactId: contact.id,
+      contactPhone: phone,
+      contactName: contact.name,
+      status: "open",
+      unreadCount: 0,
+    });
+    created = true;
+  }
+
+  const { content, media } = describe(msg);
+  const message = await messagesRepository.create({
+    conversationId: conversation.id,
+    whatsappMessageId: msg.id,
+    fromUser: true,
+    direction: "inbound",
+    content,
+    type: msg.type,
+    fromType: "contact",
+    messageType: msg.type,
+    mediaId: media?.id ?? null,
+    mediaMimeType: media?.mime ?? null,
+    mediaSha256: media?.sha ?? null,
+    status: "received",
+    timestamp: at,
+    metadata: { context: msg.context ?? null },
+  });
+  await conversationsRepository.recordMessage(conversation.id, { text: content, at, inbound: true });
+
+  // A reply to a campaign message counts towards the campaign's replied total.
+  if (msg.context?.id) {
+    const recipient = await campaignsRepository.findRecipientByWamid(msg.context.id);
+    if (recipient && recipient.status !== "replied") {
+      await campaignsRepository.updateRecipient(recipient.id, { status: "replied" });
+      await campaignsRepository.increment(recipient.campaignId, "repliedCount");
+    }
+  }
+
+  const fresh = await conversationsRepository.findById(conversation.id);
+  if (created) realtime.toChannel(channel.id, "conversation_created", { conversation: fresh });
+  realtime.toChannel(channel.id, "new_message", { conversationId: conversation.id, message });
+  realtime.toChannel(channel.id, "conversation_updated", { conversation: fresh });
+  if (fresh?.assignedTo) {
+    realtime.toUser(fresh.assignedTo, "notification:new", {
+      type: "message",
+      title: `New message from ${fresh.contactName ?? phone}`,
+      body: content.slice(0, 120),
+      conversationId: conversation.id,
+    });
+  }
+}
+
+interface StatusUpdate {
+  id: string;
+  status: string;
+  timestamp?: string;
+  recipient_id?: string;
+  errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[];
+}
+
+async function handleStatus(st: StatusUpdate) {
+  const at = st.timestamp ? new Date(Number(st.timestamp) * 1000) : new Date();
+  const error = st.errors?.[0];
+  const errorText = error ? (error.error_data?.details ?? error.message ?? error.title ?? "Delivery failed") : null;
+
+  const message: Message | undefined = await messagesRepository.findByWhatsappId(st.id);
+  if (message) {
+    const prev = message.status ?? "sent";
+    const advance = st.status === "failed" ? prev !== "read" : (STATUS_RANK[st.status] ?? -1) > (STATUS_RANK[prev] ?? -1);
+    if (advance) {
+      await messagesRepository.update(message.id, {
+        status: st.status,
+        ...(st.status === "delivered" ? { deliveredAt: at } : {}),
+        ...(st.status === "read" ? { readAt: at, deliveredAt: message.deliveredAt ?? at } : {}),
+        ...(error ? { errorCode: String(error.code ?? ""), errorMessage: errorText, errorDetails: st.errors } : {}),
+      });
+      const conv = message.conversationId ? await conversationsRepository.findById(message.conversationId) : undefined;
+      realtime.toChannel(conv?.channelId, "message_status_update", {
+        conversationId: message.conversationId,
+        messageId: message.id,
+        whatsappMessageId: st.id,
+        status: st.status,
+        error: errorText,
+      });
+    }
+  }
+
+  const recipient = await campaignsRepository.findRecipientByWamid(st.id);
+  if (recipient) {
+    const prev = recipient.status ?? "sent";
+    if (prev === "replied" || prev === "failed") return;
+    const prevRank = STATUS_RANK[prev] ?? 1;
+    if (st.status === "failed") {
+      await campaignsRepository.updateRecipient(recipient.id, { status: "failed", errorCode: String(error?.code ?? ""), errorMessage: errorText });
+      await campaignsRepository.increment(recipient.campaignId, "failedCount");
+      return;
+    }
+    const rank = STATUS_RANK[st.status] ?? -1;
+    if (rank <= prevRank) return;
+    await campaignsRepository.updateRecipient(recipient.id, {
+      status: st.status,
+      ...(rank >= 2 ? { deliveredAt: recipient.deliveredAt ?? at } : {}),
+      ...(rank >= 3 ? { readAt: at } : {}),
+    });
+    if (rank >= 2 && prevRank < 2) await campaignsRepository.increment(recipient.campaignId, "deliveredCount");
+    if (rank >= 3 && prevRank < 3) await campaignsRepository.increment(recipient.campaignId, "readCount");
+    const campaign = await campaignsRepository.findById(recipient.campaignId);
+    if (campaign) realtime.toChannel(campaign.channelId, "campaign_updated", { campaign });
+  }
+}
+
+async function handleTemplateStatus(value: { event?: string; message_template_id?: string | number; reason?: string }) {
+  if (!value.message_template_id) return;
+  const rows = await templatesRepository.findByWhatsappIdAnyChannel(String(value.message_template_id));
+  const status = String(value.event ?? "").toLowerCase();
+  for (const t of rows) {
+    await templatesRepository.update(t.id, {
+      status,
+      rejectionReason: value.reason && value.reason !== "NONE" ? value.reason : null,
+    });
+    realtime.toChannel(t.channelId, "template_updated", { templateId: t.id, status });
+  }
+}
+
+/** Processes a Meta webhook payload (or an identical simulated one). */
+export async function processWebhookPayload(payload: any, onlyChannelId?: string): Promise<void> {
+  if (payload?.object !== "whatsapp_business_account") return;
+  for (const entry of payload.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const value = change.value ?? {};
+      if (change.field === "messages") {
+        const phoneNumberId = value.metadata?.phone_number_id;
+        const channel = phoneNumberId ? await channelsRepository.findByPhoneNumberId(String(phoneNumberId)) : undefined;
+        if (!channel || (onlyChannelId && channel.id !== onlyChannelId)) {
+          log.warn({ phoneNumberId }, "Webhook for unknown or mismatched channel ignored");
+          continue;
+        }
+        for (const msg of value.messages ?? []) await handleInbound(channel, msg, value.contacts ?? []);
+        for (const st of value.statuses ?? []) await handleStatus(st);
+      } else if (change.field === "message_template_status_update") {
+        await handleTemplateStatus(value);
+      }
+    }
+  }
+}
+
+setSimulatorSink((payload) => processWebhookPayload(payload));
