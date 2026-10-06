@@ -1,0 +1,27 @@
+{
+  "name": "woomarket360",
+  "version": "3.7.2",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "db:push": "node scripts/db-push.mjs",
+    "version:set": "node scripts/set-version.mjs",
+    "build:prod-zip": "node scripts/build-prod-zip.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0",
+    "vitest": "^3.2.4"
+  }
+}

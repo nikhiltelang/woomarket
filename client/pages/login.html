@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · WooMarket360</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="login">
+    <div class="card">
+      <h2>Sign in to WooMarket360</h2>
+      <p class="muted">Use a superadmin account to manage application updates.</p>
+      <form id="login-form">
+        <label>Username <input type="text" name="username" autocomplete="username" required></label>
+        <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
+    </div>
+  </div>
+  <script type="module">
+    import { api, toast } from "/assets/common.js";
+
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      try {
+        await api("/api/auth/login", {
+          method: "POST",
+          body: { username: form.get("username"), password: form.get("password") },
+        });
+        const next = new URLSearchParams(location.search).get("next");
+        location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    });
+  </script>
+</body>
+</html>

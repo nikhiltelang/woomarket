@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.update-temp/
+.update-backups/
+.update-runs.json
+.update-runs.json.tmp
+dist/
+dist-release/
+uploads/
+.DS_Store
