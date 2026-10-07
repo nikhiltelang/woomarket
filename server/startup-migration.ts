@@ -4,6 +4,7 @@ import { ALL_PERMISSIONS } from "@shared/roles";
 import { db } from "./db";
 import { childLogger } from "./lib/logger";
 import { seedEmailTemplates } from "./seed";
+import { seedPlatformDefaults } from "./seed-platform";
 
 const log = childLogger("startup-migration");
 
@@ -32,4 +33,5 @@ export async function backfillAdminPermissions(): Promise<number> {
 export async function runStartupMigrations(): Promise<void> {
   await backfillAdminPermissions();
   await seedEmailTemplates();
+  await seedPlatformDefaults();
 }

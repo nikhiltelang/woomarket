@@ -14,6 +14,7 @@ import { marketingWorker } from "./services/marketing-worker";
 import { startScheduler, stopScheduler } from "./cron/scheduler";
 import { reconcileStaleRuns } from "./app-update/reconciler";
 import { runSeed } from "./seed";
+import { renderIndexHtml } from "./services/system-config.service";
 
 process.on("unhandledRejection", (reason) => logger.error({ err: reason }, "Unhandled promise rejection"));
 process.on("uncaughtException", (err) => {
@@ -36,7 +37,8 @@ async function attachClient(app: Express, server: http.Server) {
       if (req.method !== "GET" || isApiPath(req.originalUrl)) return next();
       try {
         const template = await fs.promises.readFile(path.resolve(process.cwd(), "client/index.html"), "utf8");
-        res.status(200).set({ "Content-Type": "text/html" }).end(await vite.transformIndexHtml(req.originalUrl, template));
+        const html = await vite.transformIndexHtml(req.originalUrl, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(await renderIndexHtml(html));
       } catch (err) {
         vite.ssrFixStacktrace(err as Error);
         next(err);
@@ -51,10 +53,11 @@ async function attachClient(app: Express, server: http.Server) {
   }
   app.use("/assets", express.static(path.join(publicDir, "assets"), { immutable: true, maxAge: "1y" }));
   app.use(express.static(publicDir, { index: false, maxAge: "1h" }));
-  app.use((req, res, next) => {
+  const shell = await fs.promises.readFile(path.join(publicDir, "index.html"), "utf8");
+  app.use(async (req, res, next) => {
     if ((req.method !== "GET" && req.method !== "HEAD") || isApiPath(req.originalUrl)) return next();
     res.setHeader("Cache-Control", "no-cache");
-    res.sendFile(path.join(publicDir, "index.html"));
+    res.type("html").send(await renderIndexHtml(shell));
   });
 }
 

@@ -5,6 +5,7 @@ import { conversationsRepository, messagesRepository } from "../repositories/con
 import { renderTemplateBody, templatesRepository } from "../repositories/templates.repository";
 import { AppError, notFound, unprocessable } from "../lib/errors";
 import { realtime } from "./realtime";
+import { assertMessageQuota } from "./levels.service";
 import { whatsappFactory, WhatsAppApiError } from "./whatsapp";
 import type { AuthUser } from "../types";
 
@@ -39,6 +40,7 @@ export async function sendConversationMessage(
   input: z.infer<typeof sendMessageSchema>,
 ): Promise<Message> {
   if (!conversation.contactPhone) throw unprocessable("Conversation has no recipient phone number");
+  if (channel.createdBy) await assertMessageQuota(channel.createdBy, 1);
   const client = whatsappFactory.create(channel);
 
   let content: string;

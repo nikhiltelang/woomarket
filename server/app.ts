@@ -10,6 +10,10 @@ import { apiRateLimiter } from "./middlewares/rate-limit";
 import { errorHandler, notFoundApi } from "./middlewares/error-handler";
 import { apiRouter } from "./routes";
 import { webhookRoutes } from "./routes/webhooks.routes";
+import { forceSsl, maintenanceGuard } from "./middlewares/platform";
+import { robotsTxt, sitemapXml } from "./controllers/system-config.controller";
+import { asyncHandler } from "./lib/http";
+import { UPLOADS_DIR } from "./lib/uploads";
 
 export interface CreateAppOptions {
   sessionStore?: session.Store;
@@ -47,6 +51,8 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       hsts: config.isProduction && config.FORCE_HTTPS !== "false",
     }),
   );
+
+  app.use(forceSsl);
 
   // Request id + access log for API calls.
   app.use((req, res, next) => {
@@ -94,8 +100,22 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
   });
   app.use(sessionMiddleware);
 
+  // User uploads (branding images): never executable, never sniffed.
+  app.use(
+    "/uploads",
+    express.static(UPLOADS_DIR, {
+      maxAge: "7d",
+      setHeaders: (res) => {
+        res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+      },
+    }),
+  );
+  app.get("/robots.txt", asyncHandler(robotsTxt));
+  app.get("/sitemap.xml", asyncHandler(sitemapXml));
+
   app.use(webhookRoutes);
-  app.use("/api", authenticate, apiRateLimiter, csrfMiddleware, apiRouter());
+  app.use("/api", authenticate, maintenanceGuard, apiRateLimiter, csrfMiddleware, apiRouter());
   app.use("/api", notFoundApi);
   app.use(errorHandler);
 

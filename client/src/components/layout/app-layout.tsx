@@ -1,96 +1,123 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
   BarChart3,
+  Bell,
   Building2,
+  ChevronDown,
   ChevronsUpDown,
   CreditCard,
   FileText,
+  Gauge,
   LayoutDashboard,
   LogOut,
   Mail,
-  MessageSquareText,
-  SlidersHorizontal,
   Megaphone,
   Menu,
   MessageSquare,
+  MessageSquareText,
   RefreshCw,
   Settings,
   Shield,
+  SlidersHorizontal,
   UserCircle,
   Users,
   UsersRound,
   X,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { Paginated } from "@shared/api-types";
 import { useAuth } from "@/contexts/auth";
 import { useChannel } from "@/contexts/channel";
+import { usePlatform } from "@/contexts/platform";
 import { useSocket, useSocketEvent } from "@/contexts/socket";
-import { cn, displayName } from "@/lib/utils";
+import { apiRequest, queryClient } from "@/lib/api";
+import { cn, displayName, relativeTime } from "@/lib/utils";
 import { Avatar } from "@/components/ui/display";
 import { useToast } from "@/components/ui/overlay";
-import { queryClient } from "@/lib/api";
+import { LanguageSwitcher } from "@/components/public";
 
-interface NavItem {
+interface NavLeaf {
   href: string;
   label: string;
-  icon: ReactNode;
+  icon?: ReactNode;
   permission?: string;
   badge?: number;
+  badgeTone?: "primary" | "warning" | "danger";
 }
+interface NavItem extends NavLeaf {
+  children?: NavLeaf[];
+}
+
+type Counts = Record<"all" | "active" | "banned" | "email-unverified" | "mobile-unverified" | "with-subscription", number>;
 
 function useNav(): { title: string; items: NavItem[] }[] {
   const { user } = useAuth();
-  const { data: unread } = useQuery<{ count: number }>({
-    queryKey: ["/api/conversations/unread-count"],
-    enabled: user?.role !== "superadmin",
-    refetchInterval: 60_000,
-  });
-  if (user?.role === "superadmin") {
+  const { t } = usePlatform();
+  const isSuper = user?.role === "superadmin";
+  const { data: unread } = useQuery<{ count: number }>({ queryKey: ["/api/conversations/unread-count"], enabled: !isSuper, refetchInterval: 60_000 });
+  const { data: counts } = useQuery<{ data: Counts }>({ queryKey: ["/api/admin/users/counts"], enabled: isSuper, refetchInterval: 60_000 });
+  const c = counts?.data;
+
+  if (isSuper) {
     return [
       {
-        title: "Platform",
+        title: t("nav.platform"),
         items: [
-          { href: "/admin", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
-          { href: "/users", label: "Users", icon: <Users className="h-4 w-4" /> },
-          { href: "/channels-management", label: "Channels", icon: <Building2 className="h-4 w-4" /> },
-          { href: "/master-subscriptions", label: "Plans", icon: <CreditCard className="h-4 w-4" /> },
+          { href: "/admin", label: t("nav.dashboard"), icon: <LayoutDashboard className="h-4 w-4" /> },
+          {
+            href: "/users",
+            label: t("nav.manageUsers"),
+            icon: <Users className="h-4 w-4" />,
+            children: [
+              { href: "/users/active", label: t("nav.activeUsers"), badge: c?.active },
+              { href: "/users/banned", label: t("nav.bannedUsers"), badge: c?.banned, badgeTone: "danger" },
+              { href: "/users/email-unverified", label: t("nav.emailUnverified"), badge: c?.["email-unverified"], badgeTone: "warning" },
+              { href: "/users/mobile-unverified", label: t("nav.mobileUnverified"), badge: c?.["mobile-unverified"], badgeTone: "warning" },
+              { href: "/users/with-subscription", label: t("nav.withSubscription"), badge: c?.["with-subscription"] },
+              { href: "/users/all", label: t("nav.allUsers"), badge: c?.all },
+              { href: "/users/send-notification", label: t("nav.sendNotification") },
+            ],
+          },
+          { href: "/manage-levels", label: t("nav.manageLevels"), icon: <Gauge className="h-4 w-4" /> },
+          { href: "/channels-management", label: t("nav.channels"), icon: <Building2 className="h-4 w-4" /> },
+          { href: "/master-subscriptions", label: t("nav.plans"), icon: <CreditCard className="h-4 w-4" /> },
         ],
       },
       {
-        title: "System",
+        title: t("nav.system"),
         items: [
-          { href: "/system-settings", label: "System settings", icon: <SlidersHorizontal className="h-4 w-4" /> },
-          { href: "/app-update", label: "Application Update", icon: <RefreshCw className="h-4 w-4" /> },
+          { href: "/system-settings", label: t("nav.systemSettings"), icon: <SlidersHorizontal className="h-4 w-4" /> },
+          { href: "/app-update", label: t("nav.appUpdate"), icon: <RefreshCw className="h-4 w-4" /> },
         ],
       },
     ];
   }
   return [
     {
-      title: "Workspace",
+      title: t("nav.workspace"),
       items: [
-        { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
-        { href: "/inbox", label: "Inbox", icon: <MessageSquare className="h-4 w-4" />, permission: "inbox:view", badge: unread?.count },
-        { href: "/contacts", label: "Contacts", icon: <Users className="h-4 w-4" />, permission: "contacts:view" },
-        { href: "/groups", label: "Groups", icon: <UsersRound className="h-4 w-4" />, permission: "contacts:view" },
-        { href: "/templates", label: "Templates", icon: <FileText className="h-4 w-4" />, permission: "templates:view" },
-        { href: "/campaigns", label: "Campaigns", icon: <Megaphone className="h-4 w-4" />, permission: "campaigns:view" },
+        { href: "/dashboard", label: t("nav.dashboard"), icon: <LayoutDashboard className="h-4 w-4" /> },
+        { href: "/inbox", label: t("nav.inbox"), icon: <MessageSquare className="h-4 w-4" />, permission: "inbox:view", badge: unread?.count },
+        { href: "/contacts", label: t("nav.contacts"), icon: <Users className="h-4 w-4" />, permission: "contacts:view" },
+        { href: "/groups", label: t("nav.groups"), icon: <UsersRound className="h-4 w-4" />, permission: "contacts:view" },
+        { href: "/templates", label: t("nav.templates"), icon: <FileText className="h-4 w-4" />, permission: "templates:view" },
+        { href: "/campaigns", label: t("nav.campaigns"), icon: <Megaphone className="h-4 w-4" />, permission: "campaigns:view" },
       ],
     },
     {
-      title: "Marketing",
+      title: t("nav.marketing"),
       items: [
-        { href: "/email-marketing", label: "Email marketing", icon: <Mail className="h-4 w-4" />, permission: "email:view" },
-        { href: "/sms-marketing", label: "SMS marketing", icon: <MessageSquareText className="h-4 w-4" />, permission: "sms:view" },
+        { href: "/email-marketing", label: t("nav.emailMarketing"), icon: <Mail className="h-4 w-4" />, permission: "email:view" },
+        { href: "/sms-marketing", label: t("nav.smsMarketing"), icon: <MessageSquareText className="h-4 w-4" />, permission: "sms:view" },
       ],
     },
     {
-      title: "Account",
+      title: t("nav.account"),
       items: [
-        { href: "/team", label: "Team", icon: <Shield className="h-4 w-4" />, permission: "team:view" },
-        { href: "/settings", label: "WhatsApp numbers", icon: <Settings className="h-4 w-4" />, permission: "settings:view" },
-        { href: "/plans", label: "Plan & usage", icon: <BarChart3 className="h-4 w-4" /> },
+        { href: "/team", label: t("nav.team"), icon: <Shield className="h-4 w-4" />, permission: "team:view" },
+        { href: "/settings", label: t("nav.whatsappNumbers"), icon: <Settings className="h-4 w-4" />, permission: "settings:view" },
+        { href: "/plans", label: t("nav.plan"), icon: <BarChart3 className="h-4 w-4" /> },
       ],
     },
   ];
@@ -119,12 +146,103 @@ function ChannelSwitcher() {
   );
 }
 
+interface InboxNotification {
+  id: number;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  sentAt: string;
+}
+
+/** Bell with unread count and a dropdown of the user's notifications. */
+function NotificationBell() {
+  const { t } = usePlatform();
+  const [open, setOpen] = useState(false);
+  const panel = useRef<HTMLDivElement>(null);
+  const unread = useQuery<{ count: number }>({ queryKey: ["/api/notifications/unread-count"], refetchInterval: 120_000 });
+  const list = useQuery<Paginated<InboxNotification>>({ queryKey: ["/api/notifications/users", { limit: 15 }], enabled: open });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    void queryClient.invalidateQueries({ queryKey: ["/api/notifications/users"] });
+  };
+  useSocketEvent("notification:new", refresh);
+  const readOne = useMutation({ mutationFn: (id: number) => apiRequest("POST", `/api/notifications/${id}/read`), onSuccess: refresh });
+  const readAll = useMutation({ mutationFn: () => apiRequest("POST", "/api/notifications/mark-all"), onSuccess: refresh });
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !panel.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  const count = unread.data?.count ?? 0;
+  return (
+    <div className="relative" ref={panel}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="relative rounded-md p-2 text-fg-muted hover:bg-subtle hover:text-fg"
+        aria-label={`${t("topbar.notifications")}${count ? ` (${count} unread)` : ""}`}
+        aria-expanded={open}
+      >
+        <Bell className="h-5 w-5" />
+        {count > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-danger px-1 text-[10px] leading-4 font-semibold text-white tabular-nums">{count > 9 ? "9+" : count}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold">{t("topbar.notifications")}</p>
+            {count > 0 && (
+              <button className="text-xs font-medium text-primary hover:underline" onClick={() => readAll.mutate()}>
+                {t("topbar.markAllRead")}
+              </button>
+            )}
+          </div>
+          <ul className="max-h-96 overflow-y-auto">
+            {list.data?.data.length ? (
+              list.data.data.map((n) => (
+                <li key={n.id}>
+                  <button
+                    className={cn("block w-full border-b border-border px-4 py-3 text-left hover:bg-subtle", !n.isRead && "bg-primary-soft/40")}
+                    onClick={() => !n.isRead && readOne.mutate(n.id)}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      {!n.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+                      {n.title}
+                    </span>
+                    <span className="mt-0.5 line-clamp-3 block text-xs whitespace-pre-line text-fg-muted">{n.message}</span>
+                    <span className="mt-1 block text-[11px] text-fg-muted">{relativeTime(n.sentAt)}</span>
+                  </button>
+                </li>
+              ))
+            ) : (
+              <li className="px-4 py-8 text-center text-sm text-fg-muted">{list.isLoading ? "…" : t("topbar.noNotifications")}</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const BADGE_TONES = { primary: "bg-primary text-primary-fg", warning: "bg-warning-soft text-warning", danger: "bg-danger-soft text-danger" };
+
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout, can } = useAuth();
+  const { config, t } = usePlatform();
   const { connected } = useSocket();
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toast = useToast();
   const groups = useNav();
 
@@ -132,12 +250,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) return null;
   const isActive = (href: string) => location === href || location.startsWith(`${href}/`);
+  const badge = (n: number | undefined, tone: NavLeaf["badgeTone"] = "primary") =>
+    n ? <span className={cn("rounded-full px-1.5 text-[11px] font-semibold tabular-nums", BADGE_TONES[tone])}>{n > 999 ? "999+" : n}</span> : null;
 
   const sidebar = (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto px-3 py-5" aria-label="Main">
       <Link href={user.role === "superadmin" ? "/admin" : "/dashboard"} className="flex items-center gap-2 px-2">
-        <img src="/favicon.svg" alt="" className="h-7 w-7" />
-        <span className="text-base font-semibold tracking-tight">WooMarket360</span>
+        <img src={config?.logo || "/favicon.svg"} alt="" className="h-7 w-7 rounded object-contain" />
+        <span className="truncate text-base font-semibold tracking-tight">{config?.siteTitle ?? "WooMarket360"}</span>
       </Link>
       {groups.map((g) => {
         const items = g.items.filter((i) => !i.permission || can(i.permission));
@@ -146,25 +266,64 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <div key={g.title}>
             <p className="mb-1 px-2 text-[11px] font-semibold tracking-wider text-fg-muted uppercase">{g.title}</p>
             <ul className="flex flex-col gap-0.5">
-              {items.map((i) => (
-                <li key={i.href}>
-                  <Link
-                    href={i.href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
-                      isActive(i.href) ? "bg-primary-soft font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
-                    )}
-                    aria-current={isActive(i.href) ? "page" : undefined}
-                  >
-                    {i.icon}
-                    <span className="flex-1">{i.label}</span>
-                    {!!i.badge && (
-                      <span className="rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-fg tabular-nums">{i.badge > 99 ? "99+" : i.badge}</span>
-                    )}
-                  </Link>
-                </li>
-              ))}
+              {items.map((i) => {
+                if (i.children) {
+                  const isOpen = expanded[i.href] ?? isActive(i.href);
+                  return (
+                    <li key={i.href}>
+                      <button
+                        onClick={() => setExpanded((s) => ({ ...s, [i.href]: !isOpen }))}
+                        aria-expanded={isOpen}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
+                          isActive(i.href) ? "font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
+                        )}
+                      >
+                        {i.icon}
+                        <span className="flex-1 text-left">{i.label}</span>
+                        <ChevronDown className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")} />
+                      </button>
+                      {isOpen && (
+                        <ul className="mt-0.5 ml-4 flex flex-col gap-0.5 border-l border-border pl-3">
+                          {i.children.map((c) => (
+                            <li key={c.href}>
+                              <Link
+                                href={c.href}
+                                onClick={() => setOpen(false)}
+                                aria-current={location === c.href ? "page" : undefined}
+                                className={cn(
+                                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                                  location === c.href ? "bg-primary-soft font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
+                                )}
+                              >
+                                <span className="flex-1">{c.label}</span>
+                                {badge(c.badge, c.badgeTone)}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                }
+                return (
+                  <li key={i.href}>
+                    <Link
+                      href={i.href}
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
+                        isActive(i.href) ? "bg-primary-soft font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
+                      )}
+                      aria-current={isActive(i.href) ? "page" : undefined}
+                    >
+                      {i.icon}
+                      <span className="flex-1">{i.label}</span>
+                      {badge(i.badge)}
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         );
@@ -191,7 +350,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           disabled={signingOut}
           className="mt-1 flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm text-fg-muted hover:bg-subtle hover:text-fg disabled:opacity-60"
         >
-          <LogOut className="h-4 w-4" /> {signingOut ? "Signing out…" : "Sign out"}
+          <LogOut className="h-4 w-4" /> {signingOut ? t("nav.signingOut") : t("nav.signOut")}
         </button>
       </div>
     </nav>
@@ -199,11 +358,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full">
-      <aside className="hidden w-60 shrink-0 border-r border-border bg-surface lg:block">{sidebar}</aside>
+      <aside className="hidden w-64 shrink-0 border-r border-border bg-surface lg:block">{sidebar}</aside>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 border-r border-border bg-surface">
+          <aside className="absolute inset-y-0 left-0 w-72 border-r border-border bg-surface">
             <button className="absolute top-4 right-3 p-1 text-fg-muted" onClick={() => setOpen(false)} aria-label="Close menu">
               <X className="h-5 w-5" />
             </button>
@@ -217,9 +376,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
           {user.role !== "superadmin" && <ChannelSwitcher />}
-          <div className="ml-auto flex items-center gap-2 text-xs text-fg-muted">
-            <span className={cn("h-2 w-2 rounded-full", connected ? "bg-success" : "bg-fg-muted/50")} aria-hidden />
-            <span className="hidden sm:inline">{connected ? "Live" : "Offline"}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <LanguageSwitcher compact />
+            <NotificationBell />
+            <span className="flex items-center gap-2 pl-1 text-xs text-fg-muted">
+              <span className={cn("h-2 w-2 rounded-full", connected ? "bg-success" : "bg-fg-muted/50")} aria-hidden />
+              <span className="hidden sm:inline">{connected ? t("topbar.live") : t("topbar.offline")}</span>
+            </span>
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>

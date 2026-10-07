@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { plans, subscriptions, type Plan, type PlanLimits, type Subscription } from "@shared/schema";
 
@@ -43,6 +43,19 @@ export const billingRepository = {
       .orderBy(desc(subscriptions.endDate))
       .limit(1);
     return row;
+  },
+
+  /** Active subscription per user (latest end date wins). */
+  async activeForUsers(userIds: string[]): Promise<Map<string, Subscription>> {
+    const map = new Map<string, Subscription>();
+    if (!userIds.length) return map;
+    const rows = await db
+      .select()
+      .from(subscriptions)
+      .where(and(inArray(subscriptions.userId, userIds), eq(subscriptions.status, "active"), gte(subscriptions.endDate, new Date())))
+      .orderBy(asc(subscriptions.endDate));
+    for (const r of rows) map.set(r.userId, r);
+    return map;
   },
 
   async listSubscriptions(userId: string): Promise<Subscription[]> {

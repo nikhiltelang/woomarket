@@ -25,6 +25,10 @@ export const realtime = {
   toUser(userId: string, event: string, payload: unknown) {
     if (io) io.to(`user:${userId}`).emit(event, payload);
   },
+  /** Drops live connections of a user (e.g. after a ban). */
+  disconnectUser(userId: string) {
+    if (io) io.in(`user:${userId}`).disconnectSockets(true);
+  },
   onlineUserIds(): string[] {
     if (!io) return [];
     const ids = new Set<string>();

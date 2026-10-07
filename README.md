@@ -76,12 +76,21 @@ templates, personalisation, scheduling, open tracking, RFC 8058 one-click unsubs
 pause/resume/cancel), **SMS marketing** (Twilio, Vonage or simulator; GSM-7/UCS-2 segment and
 credit calculation, signed delivery-receipt webhooks), plans & subscription limits, dashboards, in-app updater.
 
+**Superadmin panel:** dashboard (user segments, messaging/marketing totals, daily messages and sign-ups
+reports, sign-ins by browser/OS, server health); Manage users (active, banned, email/mobile unverified,
+with subscription, all; ban with reason, verification toggles, plan and level assignment); Send
+notification (in-app bell in real time and/or email); Manage levels (per-tenant caps on numbers,
+contacts, campaigns and monthly messages plus feature switches, enforced on top of plans); System
+settings (general, logo & favicon, system configuration switches, notification/SMTP & global email
+template, SEO, frontend content, Google sign-in, languages & translations, cron jobs, policy pages,
+maintenance mode, GDPR cookie banner, custom CSS, sitemap.xml, robots.txt).
+
 In development, email and SMS fall back to simulators when nothing is configured: emails are captured
 (see `GET /api/email-marketing/simulated-outbox`) and SMS receipts are played back; numbers ending in
 `0000` fail on purpose. Set `EMAIL_SIMULATE=false` to require real SMTP.
 
 Not yet implemented from the technical documentation: automations / flow builder, AI assistant &
-training, chat widget, payment gateways & checkout, notifications centre,
-languages / branding / CMS pages, public REST API v1 with API keys, installer, Redis/BullMQ.
+training, chat widget, payment gateways & checkout, KYC, public REST API v1 with API keys,
+installer, Redis/BullMQ.
 The schema already reserves their tables (Appendix A of the documentation); `drizzle.config.ts`
 only manages the tables defined in `shared/schema.ts`, so those are never dropped.

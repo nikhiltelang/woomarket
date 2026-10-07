@@ -20,6 +20,7 @@ import { planRoutes } from "./plans.routes";
 import { emailMarketingRoutes, emailPublicRoutes } from "./email-marketing.routes";
 import { smsMarketingRoutes } from "./sms-marketing.routes";
 import { smtpRoutes } from "./smtp.routes";
+import { platformPublicRoutes, platformRoutes } from "./platform.routes";
 import { calculate as calculateSmsSegments } from "../controllers/sms-marketing.controller";
 
 /** All /api routes. Authentication, rate limiting and CSRF run before this router. */
@@ -37,6 +38,7 @@ export function apiRouter(): Router {
   }));
   api.get("/version", (_req, res) => res.json({ version: readVersion(getRoot()) }));
   api.get("/csrf-token", (req, res) => res.json({ csrfToken: issueCsrfToken(req, res) }));
+  api.use(platformPublicRoutes);
   api.use("/auth", authRoutes);
   api.use(planRoutes); // GET /admin/plans is public; the rest guard themselves
   api.use("/email-marketing", emailPublicRoutes);
@@ -57,6 +59,7 @@ export function apiRouter(): Router {
   api.use("/email-marketing", emailMarketingRoutes);
   api.use("/sms-marketing", smsMarketingRoutes);
   api.use(smtpRoutes);
+  api.use(platformRoutes);
   api.use("/app-update", requireRole("superadmin"), appUpdateRouter());
 
   return api;

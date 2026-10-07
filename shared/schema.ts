@@ -11,6 +11,7 @@ import {
   char,
   datetime,
   decimal,
+  double,
   index,
   int,
   json,
@@ -98,6 +99,8 @@ export const users = mysqlTable(
     paypalCustomerId: varchar("paypal_customer_id", { length: 255 }),
     paystackCustomerCode: varchar("paystack_customer_code", { length: 255 }),
     mercadopagoCustomerId: varchar("mercadopago_customer_id", { length: 255 }),
+    /** Assigned platform access level (platform_access_levels.level_number); NULL = no level limits. */
+    accessLevel: int("access_level"),
   },
   (t) => [index("users_created_by_idx").on(t.createdBy), index("users_role_idx").on(t.role)],
 );
@@ -713,6 +716,218 @@ export const smsCampaignRecipients = mysqlTable(
   (t) => [index("sms_recipients_campaign_idx").on(t.campaignId), index("sms_recipients_status_idx").on(t.status)],
 );
 
+// ---------------------------------------------------------------------------
+// Platform administration
+// ---------------------------------------------------------------------------
+
+export interface SeoSettings {
+  metaTitle?: string;
+  metaDescription?: string;
+  metaKeywords?: string[];
+  ogImage?: string;
+}
+export interface FrontendSettings {
+  heroTitle?: string;
+  heroSubtitle?: string;
+  features?: string[];
+  footerText?: string;
+}
+export interface MaintenanceMode {
+  enabled: boolean;
+  title: string;
+  content: string;
+  bypassSecret: string;
+}
+export interface GdprCookie {
+  enabled: boolean;
+  bannerText: string;
+  acceptButtonText: string;
+  declineButtonText: string;
+  policyUrl: string;
+  cookieLifespanDays: number;
+}
+export interface ExtensionSettings {
+  googleLogin?: { enabled: boolean; clientId: string; clientSecret?: string };
+}
+
+export const systemConfigurations = mysqlTable("system_configurations", {
+  id: char("id", { length: 36 }).primaryKey().default("default"),
+  siteTitle: varchar("site_title", { length: 255 }).default("Cortesys"),
+  timezone: varchar("timezone", { length: 255 }).default("UTC"),
+  currency: varchar("currency", { length: 255 }).default("USD"),
+  currencySymbol: varchar("currency_symbol", { length: 255 }).default("$"),
+  siteBaseColor: varchar("site_base_color", { length: 255 }).default("#16a34a"),
+  recordsPerPage: int("records_per_page").default(20),
+  currencyDisplayMode: varchar("currency_display_mode", { length: 255 }).default("both"),
+  homeDefaultService: varchar("home_default_service", { length: 255 }).default("whatsapp_marketing"),
+  referralCommission: double("referral_commission").default(10),
+  logo: text("logo"),
+  favicon: text("favicon"),
+  userRegistration: boolean("user_registration").default(true),
+  forceSsl: boolean("force_ssl").default(false),
+  agreePolicy: boolean("agree_policy").default(true),
+  forceSecurePassword: boolean("force_secure_password").default(true),
+  kycVerification: boolean("kyc_verification").default(false),
+  emailVerification: boolean("email_verification").default(false),
+  emailNotification: boolean("email_notification").default(true),
+  mobileVerification: boolean("mobile_verification").default(false),
+  smsNotification: boolean("sms_notification").default(true),
+  pushNotification: boolean("push_notification").default(true),
+  postAutoApproval: boolean("post_auto_approval").default(true),
+  languageOption: boolean("language_option").default(true),
+  globalEmailTemplate: text("global_email_template"),
+  globalSmsTemplate: text("global_sms_template"),
+  globalPushTemplate: text("global_push_template"),
+  smtpSettings: jsonObject<Record<string, unknown>>("smtp_settings"),
+  smsSettings: jsonObject<Record<string, unknown>>("sms_settings"),
+  pushSettings: jsonObject<Record<string, unknown>>("push_settings"),
+  seoSettings: jsonObject<SeoSettings>("seo_settings"),
+  frontendSettings: jsonObject<FrontendSettings>("frontend_settings"),
+  extensionSettings: jsonObject<ExtensionSettings>("extension_settings"),
+  maintenanceMode: json("maintenance_mode")
+    .$type<MaintenanceMode>()
+    .$defaultFn(() => ({ enabled: false, title: "Platform Maintenance", content: "We are currently undergoing scheduled maintenance. Please check back shortly.", bypassSecret: "" })),
+  gdprCookie: json("gdpr_cookie")
+    .$type<GdprCookie>()
+    .$defaultFn(() => ({
+      enabled: true,
+      bannerText: "We use cookies to improve your experience and analyze site traffic. By continuing to use our website, you agree to our use of cookies.",
+      acceptButtonText: "Accept All",
+      declineButtonText: "Reject Non-Essential",
+      policyUrl: "/policy/cookie-policy",
+      cookieLifespanDays: 365,
+    })),
+  customCss: text("custom_css").$defaultFn(() => ""),
+  robotsTxt: text("robots_txt"),
+  sitemapXml: text("sitemap_xml"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const panelConfig = mysqlTable("panel_config", {
+  id: id(),
+  name: varchar("name", { length: 255 }).notNull(),
+  tagline: varchar("tagline", { length: 255 }),
+  description: text("description"),
+  logo: varchar("logo", { length: 255 }),
+  logo2: varchar("logo2", { length: 255 }),
+  favicon: varchar("favicon", { length: 255 }),
+  defaultLanguage: varchar("default_language", { length: 5 }).default("en"),
+  supportedLanguages: json("supported_languages")
+    .$type<string[]>()
+    .$defaultFn(() => ["en"]),
+  companyName: varchar("company_name", { length: 255 }),
+  companyWebsite: varchar("company_website", { length: 255 }),
+  supportEmail: varchar("support_email", { length: 255 }),
+  currency: varchar("currency", { length: 10 }).default("INR"),
+  country: varchar("country", { length: 2 }).default("IN"),
+  embeddedSignupEnabled: boolean("embedded_signup_enabled").default(true),
+  publicOrigin: text("public_origin"),
+  appearanceConfig: jsonObject<Record<string, unknown>>("appearance_config"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const policyPages = mysqlTable("policy_pages", {
+  id: id(),
+  title: varchar("title", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 255 }).notNull().unique(),
+  content: text("content").notNull(),
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  isPublished: boolean("is_published").default(true),
+  isSystem: boolean("is_system").default(false),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const cronJobLogs = mysqlTable("cron_job_logs", {
+  id: id(),
+  jobKey: varchar("job_key", { length: 100 }).notNull(),
+  jobName: varchar("job_name", { length: 255 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull(),
+  message: text("message"),
+  durationMs: int("duration_ms").default(0),
+  executedAt: ts("executed_at").default(sql`CURRENT_TIMESTAMP(3)`),
+});
+
+export const platformAccessLevels = mysqlTable("platform_access_levels", {
+  id: id(),
+  levelNumber: int("level_number").notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  badgeColor: varchar("badge_color", { length: 50 }).default("blue"),
+  maxChannels: int("max_channels").default(1),
+  maxContacts: int("max_contacts").default(500),
+  maxMessagesMonthly: int("max_messages_monthly").default(1000),
+  maxCampaigns: int("max_campaigns").default(5),
+  aiAssistantEnabled: boolean("ai_assistant_enabled").default(true),
+  smsEnabled: boolean("sms_enabled").default(false),
+  emailEnabled: boolean("email_enabled").default(false),
+  prioritySupport: boolean("priority_support").default(false),
+  apiAccess: boolean("api_access").default(false),
+  createdAt: ts("created_at").default(sql`CURRENT_TIMESTAMP(3)`),
+  updatedAt: ts("updated_at")
+    .default(sql`CURRENT_TIMESTAMP(3)`)
+    .$onUpdate(() => new Date()),
+});
+
+export const platformLanguages = mysqlTable("platform_languages", {
+  id: id(),
+  code: varchar("code", { length: 10 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  nativeName: varchar("native_name", { length: 100 }).notNull(),
+  icon: varchar("icon", { length: 10 }),
+  direction: varchar("direction", { length: 3 }).notNull().default("ltr"),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  isDefault: boolean("is_default").notNull().default(false),
+  translations: jsonObject<Record<string, string>>("translations"),
+  sortOrder: int("sort_order").default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const notifications = mysqlTable(
+  "notifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    type: varchar("type", { length: 255 }).notNull().default("general"),
+    createdBy: varchar("created_by", { length: 255 }).notNull().default("system"),
+    channelId: char("channel_id", { length: 36 }).references(() => channels.id, { onDelete: "set null" }),
+    targetType: varchar("target_type", { length: 255 }).notNull(),
+    targetIds: jsonArray<string>("target_ids"),
+    status: varchar("status", { length: 255 }).notNull().default("draft"),
+    sentAt: ts("sent_at"),
+    createdAt: ts("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [index("notifications_channel_idx").on(t.channelId)],
+);
+
+export const sentNotifications = mysqlTable("sent_notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  notificationId: int("notification_id")
+    .notNull()
+    .references(() => notifications.id, { onDelete: "cascade" }),
+  userId: varchar("user_id", { length: 255 }),
+  isRead: boolean("is_read").default(false),
+  readAt: ts("read_at"),
+  sentAt: ts("sent_at").default(sql`CURRENT_TIMESTAMP(3)`),
+});
+
+export const otpVerifications = mysqlTable("otp_verifications", {
+  id: id(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  otpCode: varchar("otp_code", { length: 6 }).notNull(),
+  expiresAt: ts("expires_at").notNull(),
+  isUsed: boolean("is_used").default(false),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -742,6 +957,15 @@ export const MANAGED_TABLES = [
   "sms_gateways",
   "sms_campaigns",
   "sms_campaign_recipients",
+  "system_configurations",
+  "panel_config",
+  "policy_pages",
+  "cron_job_logs",
+  "platform_access_levels",
+  "platform_languages",
+  "notifications",
+  "sent_notifications",
+  "otp_verifications",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -772,3 +996,11 @@ export type EmailRecipient = InferSelectModel<typeof emailCampaignRecipients>;
 export type SmsGateway = InferSelectModel<typeof smsGateways>;
 export type SmsCampaign = InferSelectModel<typeof smsCampaigns>;
 export type SmsRecipient = InferSelectModel<typeof smsCampaignRecipients>;
+export type SystemConfig = InferSelectModel<typeof systemConfigurations>;
+export type PanelConfig = InferSelectModel<typeof panelConfig>;
+export type PolicyPage = InferSelectModel<typeof policyPages>;
+export type CronJobLog = InferSelectModel<typeof cronJobLogs>;
+export type AccessLevel = InferSelectModel<typeof platformAccessLevels>;
+export type PlatformLanguage = InferSelectModel<typeof platformLanguages>;
+export type Notification = InferSelectModel<typeof notifications>;
+export type SentNotification = InferSelectModel<typeof sentNotifications>;

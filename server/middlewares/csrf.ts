@@ -13,6 +13,8 @@ const EXEMPT_PREFIXES = [
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
   "/api/auth/verify-otp",
+  "/api/users/verifyEmail",
+  "/api/users/resend-verification",
   "/api/v1/",
   "/api/widget/",
   "/api/email-marketing/unsubscribe/",

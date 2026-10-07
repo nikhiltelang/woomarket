@@ -36,12 +36,14 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Required").max(128),
 });
 
+/** Strength rules are applied server-side when "force secure password" is enabled. */
 export const signupSchema = z.object({
   username,
   email: z.string().trim().toLowerCase().email(),
-  password,
+  password: z.string().min(6, "At least 6 characters").max(128),
   firstName: z.string().trim().max(100).optional(),
   lastName: z.string().trim().max(100).optional(),
+  acceptTerms: z.boolean().optional(),
 });
 
 export const changePasswordSchema = z.object({

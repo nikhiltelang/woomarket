@@ -16,12 +16,15 @@ interface LoginResponse {
   redirect: string;
 }
 
+export type SignupResponse = LoginResponse | { verificationRequired: true; email: string };
+
 interface AuthValue {
   user: PublicUser | null;
   subscription: Subscription | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<LoginResponse>;
-  signup: (input: Record<string, unknown>) => Promise<LoginResponse>;
+  signup: (input: Record<string, unknown>) => Promise<SignupResponse>;
+  verifyEmail: (email: string, code: string) => Promise<LoginResponse>;
   logout: () => Promise<void>;
   can: (...permissions: string[]) => boolean;
   refresh: () => void;
@@ -60,7 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: onAuthenticated,
   });
   const signupMutation = useMutation({
-    mutationFn: (v: Record<string, unknown>) => apiRequest<LoginResponse>("POST", "/api/auth/signup", v),
+    mutationFn: (v: Record<string, unknown>) => apiRequest<SignupResponse>("POST", "/api/auth/signup", v),
+    onSuccess: (res) => ("verificationRequired" in res ? res : onAuthenticated(res)),
+  });
+  const verifyMutation = useMutation({
+    mutationFn: (v: { email: string; code: string }) => apiRequest<LoginResponse>("POST", "/api/users/verifyEmail", v),
     onSuccess: onAuthenticated,
   });
 
@@ -71,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading: me.isLoading,
     login: (username, password) => loginMutation.mutateAsync({ username, password }),
     signup: (input) => signupMutation.mutateAsync(input),
+    verifyEmail: (email, code) => verifyMutation.mutateAsync({ email, code }),
     logout: async () => {
       try {
         await apiRequest("POST", "/api/auth/logout");

@@ -3,10 +3,12 @@ import type { CreateCampaignInput } from "@shared/validation";
 import { campaignsRepository } from "../repositories/campaigns.repository";
 import { contactsRepository } from "../repositories/contacts.repository";
 import { templatesRepository } from "../repositories/templates.repository";
-import { badRequest, conflict, notFound, unprocessable } from "../lib/errors";
+import { AppError, badRequest, conflict, notFound, unprocessable } from "../lib/errors";
 import { childLogger } from "../lib/logger";
 import { completeCampaignIfDone, queueRepository } from "./message-queue";
 import { realtime } from "./realtime";
+import { assertMessageQuota } from "./levels.service";
+import { channelsRepository } from "../repositories/channels.repository";
 import type { AuthUser } from "../types";
 
 const log = childLogger("campaigns");
@@ -91,6 +93,8 @@ export async function startCampaign(campaignId: string): Promise<Campaign> {
     const recipients = contacts
       .filter((c) => !seen.has(c.phone) && seen.add(c.phone))
       .map((c) => ({ contact: c, params: buildParams(vars, mapping, c) }));
+    const owner = (await channelsRepository.findById(campaign.channelId!))?.createdBy;
+    if (owner) await assertMessageQuota(owner, recipients.length);
 
     await campaignsRepository.insertRecipients(
       recipients.map(({ contact, params }) => ({
@@ -119,7 +123,9 @@ export async function startCampaign(campaignId: string): Promise<Campaign> {
     log.info({ campaignId, recipients: recipients.length }, "Campaign started");
     if (recipients.length === 0) await completeCampaignIfDone(campaign.id);
   } catch (err) {
-    await campaignsRepository.update(campaign.id, { status: "failed" });
+    // A quota refusal isn't a failure of the campaign itself: return it to draft so it can be resent later.
+    const quota = err instanceof AppError && err.code === "LEVEL_LIMIT";
+    await campaignsRepository.update(campaign.id, { status: quota ? "draft" : "failed", populationStartedAt: quota ? null : campaign.populationStartedAt });
     throw err;
   }
 

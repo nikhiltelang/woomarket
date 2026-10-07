@@ -44,6 +44,12 @@ export const pool = mysql.createPool({
   enableKeepAlive: true,
 });
 
+// Every session runs in UTC so CURRENT_TIMESTAMP defaults match the UTC values the app
+// writes and reads (`timezone: "Z"` only affects how mysql2 converts JS Dates).
+(pool as unknown as { pool: { on(event: "connection", cb: (conn: { query(sql: string): void }) => void): void } }).pool.on("connection", (conn) => {
+  conn.query("SET time_zone = '+00:00'");
+});
+
 export const db = drizzle(pool, { schema, mode: "default" });
 export type Db = typeof db;
 

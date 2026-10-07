@@ -28,6 +28,9 @@ declare module "express-session" {
   interface SessionData {
     userId?: string;
     csrfToken?: string;
+    oauthState?: string;
+    oauthNext?: string;
+    maintenanceBypass?: boolean;
   }
 }
 

@@ -1,25 +1,28 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
+/** Full width unless the caller sets a width (w-*), so `className="w-36"` isn't overridden. */
+const width = (className?: string) => (/(^|\s)(w-|max-w-|min-w-|flex-1)/.test(className ?? "") ? "" : "w-full");
+
 const control =
-  "w-full rounded-md border border-border bg-surface px-3 text-sm text-fg placeholder:text-fg-muted/70 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60";
+  "rounded-md border border-border bg-surface px-3 text-sm text-fg placeholder:text-fg-muted/70 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(
   function Input({ className, invalid, ...props }, ref) {
-    return <input ref={ref} className={cn(control, "h-9", invalid && "border-danger", className)} aria-invalid={invalid || undefined} {...props} />;
+    return <input ref={ref} className={cn(control, width(className), "h-9", invalid && "border-danger", className)} aria-invalid={invalid || undefined} {...props} />;
   },
 );
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }>(
   function Textarea({ className, invalid, ...props }, ref) {
-    return <textarea ref={ref} className={cn(control, "min-h-20 py-2", invalid && "border-danger", className)} aria-invalid={invalid || undefined} {...props} />;
+    return <textarea ref={ref} className={cn(control, width(className), "min-h-20 py-2", invalid && "border-danger", className)} aria-invalid={invalid || undefined} {...props} />;
   },
 );
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }>(
   function Select({ className, invalid, children, ...props }, ref) {
     return (
-      <select ref={ref} className={cn(control, "h-9 pr-8", invalid && "border-danger", className)} {...props}>
+      <select ref={ref} className={cn(control, width(className), "h-9 pr-8", invalid && "border-danger", className)} {...props}>
         {children}
       </select>
     );
@@ -82,6 +85,28 @@ export function Checkbox({
         onChange={(e) => onChange(e.target.checked)}
       />
       {label}
+    </label>
+  );
+}
+
+/** Accessible on/off switch. */
+export function Switch({ checked, onChange, label, description, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: ReactNode; description?: ReactNode; disabled?: boolean }) {
+  return (
+    <label className={cn("flex cursor-pointer items-start justify-between gap-4", disabled && "cursor-not-allowed opacity-60")}>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        {description && <span className="mt-0.5 block text-xs text-fg-muted">{description}</span>}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={cn("relative mt-0.5 inline-flex h-6 w-11 shrink-0 rounded-full transition-colors", checked ? "bg-primary" : "bg-border")}
+      >
+        <span className={cn("absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", checked && "translate-x-5")} />
+      </button>
     </label>
   );
 }

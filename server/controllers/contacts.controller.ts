@@ -96,7 +96,9 @@ export async function importContacts(req: Request, res: Response) {
   const valid: { name: string; phone: string; email: string | null; tags: string[] }[] = [];
   const seen = new Set<string>();
   let inFileDuplicates = 0;
-  records.forEach((r, i) => {
+  records.forEach((raw, i) => {
+    // Files exported by older versions (or spreadsheets) may carry a leading apostrophe.
+    const r = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, typeof v === "string" ? v.replace(/^'(?=[+\d])/, "") : v])) as Record<string, string>;
     try {
       const c = parse(contactSchema, {
         name: r.name || r.full_name || r.phone,

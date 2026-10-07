@@ -10,6 +10,7 @@ import { contactsRepository } from "./repositories/contacts.repository";
 import { groupsRepository } from "./repositories/groups.repository";
 import { countTemplateVariables, templatesRepository } from "./repositories/templates.repository";
 import { emailTemplatesRepository } from "./repositories/email.repository";
+import { seedPlatformDefaults } from "./seed-platform";
 
 const log = logger.child({ module: "seed" });
 
@@ -127,6 +128,7 @@ export async function runSeed(): Promise<void> {
   }
 
   await seedEmailTemplates();
+  await seedPlatformDefaults();
   if (!config.isProduction) await seedDemoTenant();
 }
 
@@ -143,6 +145,7 @@ async function seedDemoTenant() {
     status: "active",
     permissions: [...ALL_PERMISSIONS],
     isEmailVerified: true,
+    accessLevel: 3,
   });
   const pro = await billingRepository.findPlanByName("Pro");
   if (pro) await billingRepository.assign(admin.id, pro, "annual");

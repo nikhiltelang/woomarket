@@ -15,6 +15,9 @@ export interface PublicUser {
   createdBy: string | null;
   lastLogin: string | null;
   createdAt: string | null;
+  isEmailVerified: boolean;
+  isMobileVerified: boolean;
+  accessLevel: number | null;
 }
 
 export interface Paginated<T> {

@@ -5,6 +5,7 @@ import { billingRepository } from "../repositories/billing.repository";
 import { channelsRepository } from "../repositories/channels.repository";
 import { contactsRepository } from "../repositories/contacts.repository";
 import { usersRepository } from "../repositories/users.repository";
+import { assertWithinLevel } from "../services/levels.service";
 
 type Feature = "channel" | "contacts" | "team" | "campaign" | "email" | "sms";
 
@@ -20,6 +21,7 @@ const usage: Record<Feature, (tenantId: string) => Promise<number>> = {
 
 /** Checks the tenant's active plan includes `feature` and the current usage is under its limit. */
 export async function assertWithinPlan(tenantId: string, feature: Feature, adding = 1): Promise<void> {
+  await assertWithinLevel(tenantId, feature, adding);
   const sub = await billingRepository.activeSubscription(tenantId);
   if (!sub) throw forbidden("Your account has no active subscription. Choose a plan to continue.", "NO_SUBSCRIPTION");
   const limit = sub.planData?.permissions?.[feature];

@@ -22,6 +22,9 @@ export function toPublicUser(u: User): PublicUser {
     createdBy: u.createdBy,
     lastLogin: u.lastLogin?.toISOString() ?? null,
     createdAt: u.createdAt?.toISOString() ?? null,
+    isEmailVerified: Boolean(u.isEmailVerified),
+    isMobileVerified: Boolean(u.isMobileVerified),
+    accessLevel: u.accessLevel ?? null,
   };
 }
 
@@ -36,6 +39,30 @@ export function toAuthUser(u: User): AuthUser {
     createdBy: u.createdBy,
     tenantId: role === "admin" ? u.id : role === "team" ? u.createdBy : null,
   };
+}
+
+export const USER_SEGMENTS = ["all", "active", "banned", "email-unverified", "mobile-unverified", "with-subscription"] as const;
+export type UserSegment = (typeof USER_SEGMENTS)[number];
+
+// Explicit aliases so the correlation can't bind to the subquery's own columns.
+const activeSubscription = sql`EXISTS (SELECT 1 FROM \`subscriptions\` s WHERE s.\`user_id\` = \`users\`.\`id\` AND s.\`status\` = 'active' AND s.\`end_date\` >= NOW(3))`;
+
+/** Filters behind the superadmin "Manage Users" sub-menu. */
+function segmentCondition(segment: UserSegment): SQL {
+  switch (segment) {
+    case "active":
+      return eq(users.status, "active");
+    case "banned":
+      return eq(users.status, "banned");
+    case "email-unverified":
+      return sql`COALESCE(${users.isEmailVerified}, 0) = 0`;
+    case "mobile-unverified":
+      return sql`${users.phone} IS NOT NULL AND ${users.phone} <> '' AND COALESCE(${users.isMobileVerified}, 0) = 0`;
+    case "with-subscription":
+      return activeSubscription;
+    default:
+      return sql`1 = 1`;
+  }
 }
 
 export const usersRepository = {
@@ -92,8 +119,12 @@ export const usersRepository = {
     role?: string;
     status?: string;
     createdBy?: string;
+    segment?: UserSegment;
+    accessLevel?: number;
   }): Promise<{ rows: User[]; total: number }> {
     const conds: SQL[] = [];
+    if (opts.segment) conds.push(segmentCondition(opts.segment));
+    if (opts.accessLevel !== undefined) conds.push(eq(users.accessLevel, opts.accessLevel));
     if (opts.search) {
       const p = likePattern(opts.search);
       conds.push(or(like(users.username, p), like(users.email, p), like(users.firstName, p), like(users.lastName, p))!);
@@ -121,6 +152,25 @@ export const usersRepository = {
       .from(users)
       .where(and(eq(users.createdBy, adminId), eq(users.role, "team")));
     return n;
+  },
+
+  async segmentCounts(): Promise<Record<UserSegment, number>> {
+    const entries = await Promise.all(
+      USER_SEGMENTS.map(async (seg) => {
+        const [{ n }] = await db.select({ n: count() }).from(users).where(segmentCondition(seg));
+        return [seg, n] as const;
+      }),
+    );
+    return Object.fromEntries(entries) as Record<UserSegment, number>;
+  },
+
+  async signupsByDay(from: Date, to: Date) {
+    const rows = await db
+      .select({ day: sql<string>`DATE(${users.createdAt})`, n: count() })
+      .from(users)
+      .where(and(sql`${users.createdAt} >= ${from}`, sql`${users.createdAt} < ${to}`))
+      .groupBy(sql`DATE(${users.createdAt})`);
+    return rows.map((r) => ({ day: String(r.day).slice(0, 10), count: r.n }));
   },
 
   async countByRole(): Promise<Record<string, number>> {

@@ -54,7 +54,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        className={cn("relative flex max-h-[92vh] w-full flex-col rounded-t-xl border border-border bg-surface shadow-xl sm:rounded-xl", widths[size])}
+        className={cn("relative flex max-h-[92vh] w-full flex-col rounded-t-xl border border-border bg-surface shadow-xl outline-none sm:rounded-xl", widths[size])}
       >
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>

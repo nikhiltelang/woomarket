@@ -6,6 +6,8 @@ import { queryClient } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/contexts/auth";
 import { ChannelProvider } from "@/contexts/channel";
 import { SocketProvider } from "@/contexts/socket";
+import { PlatformProvider, usePlatform } from "@/contexts/platform";
+import { CookieBanner, MaintenanceScreen } from "@/components/public";
 import { ConfirmProvider, ToastProvider } from "@/components/ui/overlay";
 import { PageLoader } from "@/components/ui/display";
 import { AppLayout } from "@/components/layout/app-layout";
@@ -27,7 +29,11 @@ const Account = lazy(() => import("@/pages/account"));
 const Plans = lazy(() => import("@/pages/plans"));
 const EmailMarketing = lazy(() => import("@/pages/email-marketing"));
 const SmsMarketing = lazy(() => import("@/pages/sms-marketing"));
-const SystemSettings = lazy(() => import("@/pages/admin/system-settings"));
+const SettingsHub = lazy(() => import("@/pages/admin/settings/hub"));
+const SettingsSection = lazy(() => import("@/pages/admin/settings/section-page"));
+const SendNotification = lazy(() => import("@/pages/admin/send-notification"));
+const Levels = lazy(() => import("@/pages/admin/levels"));
+const PolicyPage = lazy(() => import("@/pages/policy"));
 const AdminOverview = lazy(() => import("@/pages/admin/overview"));
 const AdminUsers = lazy(() => import("@/pages/admin/users"));
 const AdminChannels = lazy(() => import("@/pages/admin/channels"));
@@ -60,18 +66,25 @@ const routes: RouteDef[] = [
   { path: "/plans", component: Plans, roles: TENANT },
   { path: "/account", component: Account },
   { path: "/admin", component: AdminOverview, roles: SUPER },
-  { path: "/users", component: AdminUsers, roles: SUPER },
+  { path: "/users/send-notification", component: SendNotification, roles: SUPER },
+  { path: "/users/:segment", component: AdminUsers, roles: SUPER },
+  { path: "/manage-levels", component: Levels, roles: SUPER },
   { path: "/channels-management", component: AdminChannels, roles: SUPER },
   { path: "/master-subscriptions", component: AdminPlans, roles: SUPER },
   { path: "/app-update", component: AppUpdate, roles: SUPER },
-  { path: "/system-settings", component: SystemSettings, roles: SUPER },
+  { path: "/system-settings", component: SettingsHub, roles: SUPER },
+  { path: "/system-settings/:section", component: SettingsSection, roles: SUPER },
 ];
 
 function Authenticated() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
+  const { config } = usePlatform();
   if (isLoading) return <PageLoader />;
   if (!user) return <Redirect to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} />;
   const home = user.role === "superadmin" ? "/admin" : "/dashboard";
+  if (config?.maintenance.enabled && user.role !== "superadmin") {
+    return <MaintenanceScreen title={config.maintenance.title} content={config.maintenance.content} onSignOut={() => void logout()} />;
+  }
 
   return (
     <ChannelProvider>
@@ -81,6 +94,9 @@ function Authenticated() {
             <Switch>
               <Route path="/">
                 <Redirect to={home} />
+              </Route>
+              <Route path="/users">
+                <Redirect to="/users/all" />
               </Route>
               {routes.map(({ path, component: C, roles, permission, channel }) => (
                 <Route key={path} path={path}>
@@ -111,13 +127,19 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <ConfirmProvider>
-          <AuthProvider>
-            <Switch>
-              <Route path="/login" component={LoginPage} />
-              <Route path="/signup" component={SignupPage} />
-              <Route component={Authenticated} />
-            </Switch>
-          </AuthProvider>
+          <PlatformProvider>
+            <AuthProvider>
+              <Suspense fallback={<PageLoader />}>
+                <Switch>
+                  <Route path="/login" component={LoginPage} />
+                  <Route path="/signup" component={SignupPage} />
+                  <Route path="/policy/:slug" component={PolicyPage} />
+                  <Route component={Authenticated} />
+                </Switch>
+              </Suspense>
+              <CookieBanner />
+            </AuthProvider>
+          </PlatformProvider>
         </ConfirmProvider>
       </ToastProvider>
     </QueryClientProvider>
