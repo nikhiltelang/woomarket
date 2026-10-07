@@ -88,7 +88,25 @@ export async function seedEmailTemplates(): Promise<void> {
 }
 
 /** Inserts initial data. Never modifies existing accounts. Safe to run repeatedly. */
-export async function runSeed(): Promise<void> {
+export interface SeedOptions {
+  /** Superadmin chosen in the installer; without it a default "superadmin" account is created. */
+  superadmin?: { username: string; email: string; password: string; firstName?: string; lastName?: string };
+  /** Demo tenant with sample data (default: outside production only). */
+  demo?: boolean;
+}
+
+/** Creates or updates the installer's superadmin. Fails if the username belongs to a non-superadmin. */
+export async function upsertSuperadmin(a: NonNullable<SeedOptions["superadmin"]>): Promise<void> {
+  const hash = await bcrypt.hash(a.password, 12);
+  const existing = (await usersRepository.findByLogin(a.username)) ?? (await usersRepository.findByLogin(a.email));
+  if (existing && existing.role !== "superadmin") throw new Error(`The username or email "${existing.username}" already belongs to a non-admin account in this database.`);
+  const values = { username: a.username, email: a.email, password: hash, firstName: a.firstName || null, lastName: a.lastName || null, role: "superadmin" as const, status: "active", permissions: [...ALL_PERMISSIONS], isEmailVerified: true };
+  if (existing) await usersRepository.update(existing.id, values);
+  else await usersRepository.create(values);
+  log.info({ username: a.username }, existing ? "Superadmin account updated" : "Superadmin account created");
+}
+
+export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   for (const p of PLANS) {
     if (!(await billingRepository.findPlanByName(p.name))) {
       await billingRepository.createPlan(p);
@@ -96,7 +114,9 @@ export async function runSeed(): Promise<void> {
     }
   }
 
-  if (!(await usersRepository.findByLogin("superadmin"))) {
+  if (opts.superadmin) {
+    await upsertSuperadmin(opts.superadmin);
+  } else if (!(await usersRepository.findByLogin("superadmin"))) {
     let password = config.SEED_SUPERADMIN_PASSWORD;
     let generated = false;
     if (!password) {
@@ -129,7 +149,7 @@ export async function runSeed(): Promise<void> {
 
   await seedEmailTemplates();
   await seedPlatformDefaults();
-  if (!config.isProduction) await seedDemoTenant();
+  if (opts.demo ?? !config.isProduction) await seedDemoTenant();
 }
 
 /** Development-only demo tenant with a simulator channel, contacts and an approved template. */

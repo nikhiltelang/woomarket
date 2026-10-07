@@ -3,6 +3,25 @@
 WhatsApp marketing, CRM and team-inbox platform (multi-tenant SaaS).
 Node.js 20+ · TypeScript · Express · Socket.IO · Drizzle ORM · MySQL 8 · React 18 · Vite · Tailwind.
 
+## Web installer (first start)
+
+Start the app on a fresh copy without a `DATABASE_URL` (`npm run dev`, or `npm run build && npm start`)
+and it serves a setup wizard instead of the application:
+
+1. The console prints the address and a one-time **setup code** (`INSTALL_SETUP_CODE` sets your own);
+   the wizard asks for it, so only someone with access to the server can install.
+2. The wizard checks requirements (Node 20+, writable `.env` and `uploads/`, the client build in
+   production), then asks for the **MySQL** connection (tested live; the database is created if missing,
+   MySQL 8.0.13+), the **site name and public URL** (optional demo data), the **superadmin** account,
+   and optionally the platform **SMTP** server.
+3. Installing creates the tables, adds plans, templates and default settings, creates your superadmin,
+   and writes `.env` (mode 600, previous file backed up) with generated `SESSION_SECRET`, `JWT_SECRET`,
+   `ENCRYPTION_KEY` and `WEBHOOK_VERIFY_TOKEN`. The application then starts in the same process.
+
+The installer only runs while no `DATABASE_URL` is configured, so deployments that set it through the
+environment (Docker, PM2) or an existing `.env` start normally. `ENV_FILE` points the app and the
+installer at a different configuration file.
+
 ## Quick start (local)
 
 ```bash

@@ -1,5 +1,8 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import { z } from "zod";
+
+// Same file the installer writes (ENV_FILE overrides ./.env). Real environment variables win.
+dotenv.config({ path: process.env.ENV_FILE || undefined });
 
 const bool = z
   .enum(["true", "false", "1", "0", ""])

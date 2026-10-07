@@ -1,6 +1,7 @@
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import InstallerApp from "./install/installer-app";
 import "./index.css";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -28,7 +29,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      {/* The server sets this flag while the application isn't installed yet. */}
+      {(window as unknown as { __WM_INSTALLER__?: boolean }).__WM_INSTALLER__ ? <InstallerApp /> : <App />}
     </ErrorBoundary>
   </StrictMode>,
 );

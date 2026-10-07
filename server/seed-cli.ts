@@ -4,7 +4,7 @@ import { logger } from "./lib/logger";
 import { runSeed } from "./seed";
 
 connectDatabase()
-  .then(runSeed)
+  .then(() => runSeed())
   .then(() => logger.info("Seed complete"))
   .catch((err) => {
     logger.error({ err }, "Seed failed");
