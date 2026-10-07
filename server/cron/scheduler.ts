@@ -7,6 +7,8 @@ import { whatsappFactory } from "../services/whatsapp";
 import { requestLogsRepository } from "../repositories/request-logs.repository";
 import { requestLogSettings } from "../services/request-log.service";
 import { apiKeysRepository } from "../repositories/api-keys.repository";
+import { decideDueTests } from "../services/ab-test.service";
+import { webhooksRepository } from "../services/webhooks.service";
 
 const log = childLogger("cron");
 
@@ -60,6 +62,20 @@ export const jobs: Job[] = [
       const removed = await requestLogsRepository.deleteOlderThan(new Date(Date.now() - retentionDays * 86400_000));
       return `${removed} log entr${removed === 1 ? "y" : "ies"} older than ${retentionDays} day(s) removed`;
     },
+  },
+  {
+    key: "webhook-delivery-cleanup",
+    name: "Webhook delivery log cleanup",
+    description: "Deletes outgoing webhook delivery records older than 30 days.",
+    intervalMs: 24 * 60 * 60 * 1000,
+    run: async () => `${await webhooksRepository.deleteOldDeliveries(new Date(Date.now() - 30 * 86_400_000))} delivery record(s) deleted`,
+  },
+  {
+    key: "ab-test-decider",
+    name: "A/B test winners",
+    description: "Picks the winning variant of A/B tests whose waiting time is over and sends it to everyone else.",
+    intervalMs: 60_000,
+    run: async () => `${await decideDueTests()} test(s) decided`,
   },
   {
     key: "api-housekeeping",

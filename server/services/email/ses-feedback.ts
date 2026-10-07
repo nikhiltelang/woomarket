@@ -2,6 +2,7 @@
  * Amazon SES feedback through Amazon SNS: bounce, complaint and delivery notifications.
  * Every SNS message is signature-checked against Amazon's signing certificate before use.
  */
+import { emit } from "../webhooks.service";
 import crypto from "node:crypto";
 import { childLogger } from "../../lib/logger";
 import { contactsRepository } from "../../repositories/contacts.repository";
@@ -111,6 +112,7 @@ export async function handleSesEvent(e: SesEvent, configOwner: string | null): P
       await emailCampaignsRepository.updateRecipient(r.id, { status: "bounced", deliveredAt: null, errorMessage: `Bounced: ${e.bounce.bouncedRecipients?.[0]?.diagnosticCode ?? e.bounce.bounceSubType ?? "permanent"}`.slice(0, 1000) });
       if (wasDelivered) await emailCampaignsRepository.increment(r.campaignId, "deliveredCount", -1);
       await emailCampaignsRepository.increment(r.campaignId, "failedCount");
+      emit(owner, "email.bounced", { campaignId: r.campaignId, email: r.email, contactId: r.contactId, reason: e.bounce.bouncedRecipients?.[0]?.diagnosticCode ?? e.bounce.bounceSubType ?? "permanent", permanent: true, at: new Date().toISOString() });
     }
     return "bounce recorded";
   }

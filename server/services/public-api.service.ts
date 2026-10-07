@@ -1,4 +1,5 @@
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { emitContactsCreated } from "./webhook-events";
 import { MAX_API_AUDIENCE, type ApiSendInput } from "@shared/public-api";
 import { calculateSegments, renderMergeTags } from "@shared/sms";
 import { contacts, emailCampaignRecipients, emailCampaigns, type ApiKey, type Channel, type Group, type User } from "@shared/schema";
@@ -203,6 +204,7 @@ async function sendEmail(key: ApiKey, input: Extract<ApiSendInput, { channel: "e
     csvData: list.map((r) => ({ email: r.email, ...(r.name ? { name: r.name } : {}), ...(r.contactId ? { contactId: r.contactId } : {}) })),
     scheduledAt: input.scheduleAt ?? null,
     status: input.scheduleAt ? "scheduled" : "draft",
+    delivery: { mode: "immediate", ignoreQuietHours: !input.respectQuietHours },
   });
   const started = input.scheduleAt ? campaign : await startEmailCampaign(campaign.id);
   return result(campaign.id, input, name, started.status ?? "sending", smtp.source === "simulator", input.recipients.length + members.length, list.length, rejected, summarise(groups, members));
@@ -237,6 +239,7 @@ async function sendSms(key: ApiKey, input: Extract<ApiSendInput, { channel: "sms
     csvData: list.map((r) => ({ phone: r.phone, ...(r.name ? { name: r.name } : {}), ...(r.contactId ? { contactId: r.contactId } : {}) })),
     scheduledAt: input.scheduleAt ?? null,
     status: input.scheduleAt ? "scheduled" : "draft",
+    delivery: { mode: "immediate", ignoreQuietHours: !input.respectQuietHours },
     smsSegmentsPerRecipient: calculateSegments(input.message).segments,
     gateway: gateway?.provider ?? "simulator",
     senderId: gateway?.senderId ?? "CORTESYS",
@@ -318,6 +321,7 @@ async function sendWhatsapp(key: ApiKey, input: Extract<ApiSendInput, { channel:
     await contactsRepository.insertManyIgnoreDuplicates(
       fresh.map((r) => ({ channelId: channel.id, createdBy: tenant.id, name: r.name ?? r.phone, phone: r.phone, status: "active", source: "api", groups: [] })),
     );
+    void emitContactsCreated(tenantId, channel.id, fresh.map((r) => r.phone));
   }
   const idByPhone = new Map(
     (phones.length ? await db.select({ id: contacts.id, phone: contacts.phone }).from(contacts).where(and(eq(contacts.channelId, channel.id), inArray(contacts.phone, phones))) : []).map((c) => [c.phone, c.id]),
@@ -345,6 +349,7 @@ async function sendWhatsapp(key: ApiKey, input: Extract<ApiSendInput, { channel:
     csvData: list.map((r) => ({ contactId: r.contactId ?? idByPhone.get(r.phone)!, ...Object.fromEntries(valuesFor(r).map((v, i) => [String(i + 1), v])) })),
     status: input.scheduleAt ? "scheduled" : "draft",
     scheduledAt: input.scheduleAt ?? null,
+    delivery: { mode: "immediate", ignoreQuietHours: !input.respectQuietHours },
   });
   const started = input.scheduleAt ? campaign : await startCampaign(campaign.id);
   return result(campaign.id, input, name, started.status ?? "running", channel.connectionMethod === "simulator" || config.WHATSAPP_SIMULATE, input.recipients.length + members.length, list.length, rejected, summarise(groups, members));

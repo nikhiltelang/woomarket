@@ -1,7 +1,11 @@
 /** Request validation schemas shared by the API and the React forms. */
 import { z } from "zod";
+import { emailDesignSchema } from "./email-design";
 import { ALL_PERMISSIONS } from "./roles";
 import { contactFieldsSchema } from "./contact-fields";
+import { utmSchema } from "./tracking";
+import { deliverySchema } from "./sending";
+import { emailAbSchema, smsAbSchema, whatsappAbSchema } from "./ab-test";
 
 const phone = z
   .string()
@@ -229,17 +233,21 @@ export const createCampaignSchema = z
     name: z.string().trim().min(1).max(255),
     description: z.string().trim().max(1000).nullish(),
     templateId: z.string().uuid(),
-    audienceType: z.enum(["all", "groups", "contacts"]),
+    audienceType: z.enum(["all", "groups", "contacts", "segment"]),
+    segmentId: z.string().uuid().nullish(),
     contactGroups: z.array(z.string().uuid()).max(50).default([]),
     contactIds: z.array(z.string().uuid()).max(10000).default([]),
     /** Template variable number -> "field:name" | "field:phone" | "field:email" | "static:<text>" */
     variableMapping: z.record(z.string().regex(/^\d+$/), z.string().max(500)).default({}),
     scheduledAt: z.coerce.date().nullish(),
+    delivery: deliverySchema.nullish(),
+    abTest: whatsappAbSchema.nullish(),
   })
   .superRefine((v, ctx) => {
     if (v.audienceType === "groups" && v.contactGroups.length === 0) {
       ctx.addIssue({ code: "custom", path: ["contactGroups"], message: "Select at least one group" });
     }
+    if (v.audienceType === "segment" && !v.segmentId) ctx.addIssue({ code: "custom", path: ["segmentId"], message: "Choose a segment" });
     if (v.audienceType === "contacts" && v.contactIds.length === 0) {
       ctx.addIssue({ code: "custom", path: ["contactIds"], message: "Select at least one contact" });
     }
@@ -331,6 +339,7 @@ export const emailTemplateSchema = z.object({
   previewText: z.string().trim().max(255).nullish(),
   contentHtml: z.string().min(1).max(500_000),
   contentText: z.string().max(200_000).nullish(),
+  design: emailDesignSchema.nullish(),
 });
 
 const csvEmailRows = z
@@ -346,15 +355,23 @@ export const emailCampaignSchema = z
     replyTo: optionalEmail,
     contentHtml: z.string().min(1, "Email content is required").max(500_000),
     contentText: z.string().max(200_000).nullish(),
+    design: emailDesignSchema.nullish(),
     templateId: z.string().uuid().nullish(),
-    targetAudience: z.enum(["all_contacts", "group", "csv"]),
+    targetAudience: z.enum(["all_contacts", "group", "segment", "csv"]),
     targetGroupId: z.string().uuid().nullish(),
+    targetSegmentId: z.string().uuid().nullish(),
     csvData: csvEmailRows.default([]),
     scheduledAt: z.coerce.date().nullish(),
+    trackClicks: z.boolean().default(true),
+    utm: utmSchema.nullish(),
+    delivery: deliverySchema.nullish(),
+    abTest: emailAbSchema.nullish(),
   })
   .superRefine((v, ctx) => {
     if (v.targetAudience === "group" && !v.targetGroupId) ctx.addIssue({ code: "custom", path: ["targetGroupId"], message: "Choose a group" });
+    if (v.targetAudience === "segment" && !v.targetSegmentId) ctx.addIssue({ code: "custom", path: ["targetSegmentId"], message: "Choose a segment" });
     if (v.targetAudience === "csv" && v.csvData.length === 0) ctx.addIssue({ code: "custom", path: ["csvData"], message: "Upload a CSV with an email column" });
+    if (v.abTest?.enabled && v.abTest.metric === "click" && !v.trackClicks) ctx.addIssue({ code: "custom", path: ["abTest"], message: "Testing by click rate needs click tracking on" });
     if (v.scheduledAt && v.scheduledAt.getTime() < Date.now() - 60_000) ctx.addIssue({ code: "custom", path: ["scheduledAt"], message: "Schedule time must be in the future" });
   });
 
@@ -388,14 +405,21 @@ export const smsCampaignSchema = z
   .object({
     name: z.string().trim().min(1).max(255),
     message: z.string().trim().min(1, "Message is required").max(1600),
-    targetAudience: z.enum(["all_contacts", "group", "csv"]),
+    targetAudience: z.enum(["all_contacts", "group", "segment", "csv"]),
     targetGroupId: z.string().uuid().nullish(),
+    targetSegmentId: z.string().uuid().nullish(),
     csvData: csvPhoneRows.default([]),
     scheduledAt: z.coerce.date().nullish(),
+    trackClicks: z.boolean().default(false),
+    utm: utmSchema.nullish(),
+    delivery: deliverySchema.nullish(),
+    abTest: smsAbSchema.nullish(),
   })
   .superRefine((v, ctx) => {
     if (v.targetAudience === "group" && !v.targetGroupId) ctx.addIssue({ code: "custom", path: ["targetGroupId"], message: "Choose a group" });
+    if (v.targetAudience === "segment" && !v.targetSegmentId) ctx.addIssue({ code: "custom", path: ["targetSegmentId"], message: "Choose a segment" });
     if (v.targetAudience === "csv" && v.csvData.length === 0) ctx.addIssue({ code: "custom", path: ["csvData"], message: "Upload a CSV with a phone column" });
+    if (v.abTest?.enabled && !v.trackClicks) ctx.addIssue({ code: "custom", path: ["abTest"], message: "SMS A/B tests pick the winner by click rate: turn on link tracking" });
     if (v.scheduledAt && v.scheduledAt.getTime() < Date.now() - 60_000) ctx.addIssue({ code: "custom", path: ["scheduledAt"], message: "Schedule time must be in the future" });
   });
 

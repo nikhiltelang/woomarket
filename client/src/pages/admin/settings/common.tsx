@@ -10,13 +10,17 @@ import { Card, PageHeader, PageLoader } from "@/components/ui/display";
 import { useToast } from "@/components/ui/overlay";
 
 export type AdminSystemConfig = Omit<SystemConfig, "extensionSettings"> & {
-  extensionSettings: { googleLogin: { enabled: boolean; clientId: string; hasClientSecret: boolean } };
+  extensionSettings: {
+    googleLogin: { enabled: boolean; clientId: string; hasClientSecret: boolean };
+    microsoftLogin: { enabled: boolean; clientId: string; tenant: string; hasClientSecret: boolean };
+  };
 };
 
 export interface SystemConfigResponse {
   data: AdminSystemConfig;
   panel: PanelConfig;
   googleRedirectUri: string;
+  microsoftRedirectUri: string;
   defaults: { robotsTxt: string; sitemapXml: string };
 }
 

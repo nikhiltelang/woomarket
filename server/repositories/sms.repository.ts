@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { smsCampaignRecipients, smsCampaigns, smsGateways, type SmsCampaign, type SmsGateway, type SmsRecipient } from "@shared/schema";
 import { encryptSecret } from "../lib/crypto";
@@ -155,7 +155,7 @@ export const smsCampaignsRepository = {
     const [{ n }] = await db
       .select({ n: count() })
       .from(smsCampaignRecipients)
-      .where(and(eq(smsCampaignRecipients.campaignId, campaignId), inArray(smsCampaignRecipients.status, ["pending", "processing"])));
+      .where(and(eq(smsCampaignRecipients.campaignId, campaignId), inArray(smsCampaignRecipients.status, ["pending", "processing", "held"])));
     return n;
   },
 
@@ -163,7 +163,7 @@ export const smsCampaignsRepository = {
     await db
       .update(smsCampaignRecipients)
       .set({ status: to })
-      .where(and(eq(smsCampaignRecipients.campaignId, campaignId), eq(smsCampaignRecipients.status, "pending")));
+      .where(and(eq(smsCampaignRecipients.campaignId, campaignId), inArray(smsCampaignRecipients.status, ["pending", "held"])));
   },
 
   async claim(limit: number): Promise<SmsRecipient[]> {
@@ -174,6 +174,7 @@ export const smsCampaignsRepository = {
         .where(
           and(
             eq(smsCampaignRecipients.status, "pending"),
+            or(isNull(smsCampaignRecipients.sendAfter), lte(smsCampaignRecipients.sendAfter, sql`CURRENT_TIMESTAMP(3)`)),
             inArray(smsCampaignRecipients.campaignId, tx.select({ id: smsCampaigns.id }).from(smsCampaigns).where(eq(smsCampaigns.status, "sending"))),
           ),
         )

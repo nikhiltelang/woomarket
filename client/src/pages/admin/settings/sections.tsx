@@ -151,6 +151,15 @@ function ConfigurationForm({ c }: { c: SystemConfigResponse }) {
           <Switch label={s.label} description={s.description} checked={Boolean(c.data[s.key])} disabled={save.isPending} onChange={(on) => save.mutate({ [s.key]: on })} />
         </div>
       ))}
+      <div className="p-5">
+        <Field label="Two-factor authentication" htmlFor="cfg-2fa" hint="Users it applies to must set up an authenticator app before they can use the platform. Anyone can still turn it on for themselves.">
+          <Select id="cfg-2fa" className="max-w-md" value={c.data.twoFactorPolicy ?? "optional"} disabled={save.isPending} onChange={(e) => save.mutate({ twoFactorPolicy: e.target.value })}>
+            <option value="optional">Optional for everyone</option>
+            <option value="superadmin">Required for the superadmin</option>
+            <option value="admins">Required for the superadmin and all admins</option>
+          </Select>
+        </Field>
+      </div>
     </SectionCard>
   );
 }
@@ -259,29 +268,82 @@ function FrontendForm({ c }: { c: SystemConfigResponse }) {
 
 // --- Social login -----------------------------------------------------------------------------
 
-function SocialLoginForm({ c }: { c: SystemConfigResponse }) {
+function RedirectUri({ uri, where }: { uri: string; where: string }) {
   const toast = useToast();
+  return (
+    <div className="rounded-md bg-subtle p-3 text-sm">
+      <p className="font-medium">Redirect URI</p>
+      <p className="mt-1 text-fg-muted">{where}</p>
+      <p className="mt-2 flex items-center gap-2">
+        <code className="rounded bg-surface px-1.5 py-0.5 font-mono text-xs break-all">{uri}</code>
+        <Button size="icon" variant="ghost" aria-label="Copy redirect URI" onClick={() => { void navigator.clipboard.writeText(uri); toast({ title: "Copied", variant: "success" }); }}><Copy className="h-4 w-4" /></Button>
+      </p>
+    </div>
+  );
+}
+
+const MS_TENANTS = [
+  { value: "common", label: "Any Microsoft account (work, school or personal)" },
+  { value: "organizations", label: "Work or school accounts only" },
+  { value: "consumers", label: "Personal accounts only (Outlook, Hotmail)" },
+  { value: "custom", label: "One organisation only (directory ID or domain)" },
+];
+
+function SocialLoginForm({ c }: { c: SystemConfigResponse }) {
   const g = c.data.extensionSettings.googleLogin;
+  const m = c.data.extensionSettings.microsoftLogin;
   const [v, setV] = useState({ enabled: g.enabled, clientId: g.clientId, clientSecret: "" });
+  const isPreset = ["common", "organizations", "consumers"].includes(m.tenant);
+  const [ms, setMs] = useState({ enabled: m.enabled, clientId: m.clientId, clientSecret: "", tenantMode: isPreset ? m.tenant : "custom", customTenant: isPreset ? "" : m.tenant });
   const save = useSaveSection("social-login");
+  const tenant = ms.tenantMode === "custom" ? ms.customTenant.trim() : ms.tenantMode;
   return (
     <SectionCard>
-      <div className="flex max-w-2xl flex-col gap-5">
-        <Switch label="Sign in with Google" description="Shows “Continue with Google” on the sign-in and sign-up pages. Only verified Google emails are accepted." checked={v.enabled} onChange={(enabled) => setV({ ...v, enabled })} />
-        <Field label="Client ID" htmlFor="gl-id"><Input id="gl-id" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} placeholder="1234…apps.googleusercontent.com" /></Field>
-        <Field label="Client secret" htmlFor="gl-secret" hint={g.hasClientSecret ? "A secret is saved. Leave blank to keep it." : "Stored encrypted when ENCRYPTION_KEY is set."}>
-          <Input id="gl-secret" type="password" autoComplete="new-password" value={v.clientSecret} onChange={(e) => setV({ ...v, clientSecret: e.target.value })} />
-        </Field>
-        <div className="rounded-md bg-subtle p-3 text-sm">
-          <p className="font-medium">Authorized redirect URI</p>
-          <p className="mt-1 text-fg-muted">Add this in Google Cloud Console → Credentials → your OAuth client.</p>
-          <p className="mt-2 flex items-center gap-2">
-            <code className="rounded bg-surface px-1.5 py-0.5 font-mono text-xs break-all">{c.googleRedirectUri}</code>
-            <Button size="icon" variant="ghost" aria-label="Copy" onClick={() => { void navigator.clipboard.writeText(c.googleRedirectUri); toast({ title: "Copied", variant: "success" }); }}><Copy className="h-4 w-4" /></Button>
-          </p>
-        </div>
+      <div className="grid gap-8 lg:grid-cols-2">
+        <section className="flex min-w-0 flex-col gap-5" aria-labelledby="sso-google">
+          <h3 id="sso-google" className="text-sm font-semibold">Google</h3>
+          <Switch label="Sign in with Google" description="Shows “Continue with Google” on the sign-in and sign-up pages. Only verified Google emails are accepted." checked={v.enabled} onChange={(enabled) => setV({ ...v, enabled })} />
+          <Field label="Client ID" htmlFor="gl-id"><Input id="gl-id" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} placeholder="1234…apps.googleusercontent.com" /></Field>
+          <Field label="Client secret" htmlFor="gl-secret" hint={g.hasClientSecret ? "A secret is saved. Leave blank to keep it." : "Stored encrypted."}>
+            <Input id="gl-secret" type="password" autoComplete="new-password" value={v.clientSecret} onChange={(e) => setV({ ...v, clientSecret: e.target.value })} />
+          </Field>
+          <RedirectUri uri={c.googleRedirectUri} where="Google Cloud Console → APIs & Services → Credentials → your OAuth client → Authorized redirect URIs." />
+        </section>
+        <section className="flex min-w-0 flex-col gap-5" aria-labelledby="sso-ms">
+          <h3 id="sso-ms" className="text-sm font-semibold">Microsoft (Entra ID)</h3>
+          <Switch label="Sign in with Microsoft" description="Shows “Continue with Microsoft” for Microsoft 365, work, school and personal accounts." checked={ms.enabled} onChange={(enabled) => setMs({ ...ms, enabled })} />
+          <Field label="Application (client) ID" htmlFor="ms-id"><Input id="ms-id" value={ms.clientId} onChange={(e) => setMs({ ...ms, clientId: e.target.value })} placeholder="00000000-0000-0000-0000-000000000000" /></Field>
+          <Field label="Client secret (value)" htmlFor="ms-secret" hint={m.hasClientSecret ? "A secret is saved. Leave blank to keep it. Secrets expire in Entra, so renew it before then." : "Certificates & secrets → New client secret → copy the Value (not the ID)."}>
+            <Input id="ms-secret" type="password" autoComplete="new-password" value={ms.clientSecret} onChange={(e) => setMs({ ...ms, clientSecret: e.target.value })} />
+          </Field>
+          <Field label="Who can sign in" htmlFor="ms-tenant" hint="Must match “Supported account types” in your app registration.">
+            <Select id="ms-tenant" value={ms.tenantMode} onChange={(e) => setMs({ ...ms, tenantMode: e.target.value })}>
+              {MS_TENANTS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </Select>
+          </Field>
+          {ms.tenantMode === "custom" && (
+            <Field label="Directory (tenant) ID or domain" htmlFor="ms-custom" hint="Accounts in this directory are matched to existing users by email.">
+              <Input id="ms-custom" value={ms.customTenant} onChange={(e) => setMs({ ...ms, customTenant: e.target.value })} placeholder="contoso.onmicrosoft.com" />
+            </Field>
+          )}
+          {ms.tenantMode !== "custom" && ms.tenantMode !== "consumers" && (
+            <p className="rounded-md border border-warning/40 bg-warning-soft/40 p-3 text-xs text-fg-muted">
+              Work accounts from other organisations sign in only when Microsoft confirms their email. Add the optional claim <code>xms_edov</code> (Token configuration → Add optional claim → ID) so verified domains are recognised. Without it, those users can still connect Microsoft from their account page after signing in with a password.
+            </p>
+          )}
+          <RedirectUri uri={c.microsoftRedirectUri} where="Entra admin center → App registrations → your app → Authentication → Web → Redirect URIs." />
+        </section>
       </div>
-      <SaveBar pending={save.isPending} onSave={() => save.mutate({ googleLogin: { enabled: v.enabled, clientId: v.clientId.trim(), clientSecret: v.clientSecret || undefined } })} />
+      <SaveBar
+        pending={save.isPending}
+        disabled={ms.tenantMode === "custom" && !tenant}
+        onSave={() =>
+          save.mutate({
+            googleLogin: { enabled: v.enabled, clientId: v.clientId.trim(), clientSecret: v.clientSecret || undefined },
+            microsoftLogin: { enabled: ms.enabled, clientId: ms.clientId.trim(), clientSecret: ms.clientSecret || undefined, tenant },
+          })
+        }
+      />
     </SectionCard>
   );
 }
@@ -368,7 +430,7 @@ export const SECTIONS: Record<string, { title: string; description: string; rend
   notification: { title: "Notification setting", description: "How platform emails are sent and how they look.", render: (c) => <NotificationForm c={c} />, wide: true },
   seo: { title: "SEO configuration", description: "Injected into every page served by the app.", render: (c) => <SeoForm c={c} /> },
   frontend: { title: "Manage frontend", description: "Content of the public sign-in and sign-up pages.", render: (c) => <FrontendForm c={c} /> },
-  "social-login": { title: "Social login setting", description: "Google OAuth 2.0 sign-in.", render: (c) => <SocialLoginForm c={c} /> },
+  "social-login": { title: "Social login setting", description: "Single sign-on with Google and Microsoft.", render: (c) => <SocialLoginForm c={c} /> },
   maintenance: { title: "Maintenance mode", description: "Temporarily take the app offline for tenants.", render: (c) => <MaintenanceForm c={c} /> },
   "gdpr-cookie": { title: "GDPR cookie", description: "Cookie consent for visitors.", render: (c) => <GdprForm c={c} /> },
   "custom-css": { title: "Custom CSS", description: "Loaded on every page after the app's own styles.", render: (c) => <CodeForm c={c} section="custom-css" field="customCss" label="Custom CSS" hint="Plain CSS. Test carefully: it applies to every user." /> },

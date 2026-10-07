@@ -17,14 +17,19 @@ interface LoginResponse {
 }
 
 export type SignupResponse = LoginResponse | { verificationRequired: true; email: string };
+/** Password accepted; the account needs its two-factor code next. */
+export type TwoFactorPending = { twoFactorRequired: true };
+export type SignInResponse = LoginResponse | TwoFactorPending;
+export const needsTwoFactor = (r: SignInResponse): r is TwoFactorPending => "twoFactorRequired" in r;
 
 interface AuthValue {
   user: PublicUser | null;
   subscription: Subscription | null;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<LoginResponse>;
+  login: (username: string, password: string) => Promise<SignInResponse>;
+  verifyTwoFactor: (code: string) => Promise<LoginResponse & { recoveryCodesLeft?: number }>;
   signup: (input: Record<string, unknown>) => Promise<SignupResponse>;
-  verifyEmail: (email: string, code: string) => Promise<LoginResponse>;
+  verifyEmail: (email: string, code: string) => Promise<SignInResponse>;
   logout: () => Promise<void>;
   can: (...permissions: string[]) => boolean;
   refresh: () => void;
@@ -59,7 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginMutation = useMutation({
-    mutationFn: (v: { username: string; password: string }) => apiRequest<LoginResponse>("POST", "/api/auth/login", v),
+    mutationFn: (v: { username: string; password: string }) => apiRequest<SignInResponse>("POST", "/api/auth/login", v),
+    onSuccess: (res) => (needsTwoFactor(res) ? res : onAuthenticated(res)),
+  });
+  const twoFactorMutation = useMutation({
+    mutationFn: (code: string) => apiRequest<LoginResponse & { recoveryCodesLeft?: number }>("POST", "/api/auth/2fa/verify", { code }),
     onSuccess: onAuthenticated,
   });
   const signupMutation = useMutation({
@@ -67,8 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: (res) => ("verificationRequired" in res ? res : onAuthenticated(res)),
   });
   const verifyMutation = useMutation({
-    mutationFn: (v: { email: string; code: string }) => apiRequest<LoginResponse>("POST", "/api/users/verifyEmail", v),
-    onSuccess: onAuthenticated,
+    mutationFn: (v: { email: string; code: string }) => apiRequest<SignInResponse>("POST", "/api/users/verifyEmail", v),
+    onSuccess: (res) => (needsTwoFactor(res) ? res : onAuthenticated(res)),
   });
 
   const user = me.data?.user ?? null;
@@ -77,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     subscription: me.data?.subscription ?? null,
     isLoading: me.isLoading,
     login: (username, password) => loginMutation.mutateAsync({ username, password }),
+    verifyTwoFactor: (code) => twoFactorMutation.mutateAsync(code),
     signup: (input) => signupMutation.mutateAsync(input),
     verifyEmail: (email, code) => verifyMutation.mutateAsync({ email, code }),
     logout: async () => {

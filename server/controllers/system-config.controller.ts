@@ -30,10 +30,12 @@ import { executeJob, isRunning, jobs, nextRunAt } from "../cron/scheduler";
 /** Full configuration for the superadmin; secrets are replaced by "is set" flags. */
 function adminView(s: SystemConfig) {
   const google = s.extensionSettings?.googleLogin;
+  const microsoft = s.extensionSettings?.microsoftLogin;
   return {
     ...s,
     extensionSettings: {
       googleLogin: { enabled: Boolean(google?.enabled), clientId: google?.clientId ?? "", hasClientSecret: Boolean(google?.clientSecret) },
+      microsoftLogin: { enabled: Boolean(microsoft?.enabled), clientId: microsoft?.clientId ?? "", tenant: microsoft?.tenant ?? "common", hasClientSecret: Boolean(microsoft?.clientSecret) },
     },
     maintenanceMode: s.maintenanceMode,
   };
@@ -45,6 +47,7 @@ export async function getAll(_req: Request, res: Response) {
     data: adminView(s),
     panel,
     googleRedirectUri: `${publicBaseUrl()}/api/auth/google/callback`,
+    microsoftRedirectUri: `${publicBaseUrl()}/api/auth/microsoft/callback`,
     defaults: { robotsTxt: DEFAULT_ROBOTS(publicBaseUrl()), sitemapXml: await defaultSitemap() },
   });
 }
@@ -98,7 +101,15 @@ export async function updateSection(req: Request, res: Response) {
       const prev = current.extensionSettings?.googleLogin;
       const secret = input.googleLogin.clientSecret ? encryptSecret(input.googleLogin.clientSecret) : prev?.clientSecret;
       if (input.googleLogin.enabled && (!input.googleLogin.clientId || !secret)) throw badRequest("Client ID and client secret are required to enable Google sign-in");
-      patch = { extensionSettings: { ...current.extensionSettings, googleLogin: { enabled: input.googleLogin.enabled, clientId: input.googleLogin.clientId, clientSecret: secret } } };
+      const ext = { ...current.extensionSettings, googleLogin: { enabled: input.googleLogin.enabled, clientId: input.googleLogin.clientId, clientSecret: secret } };
+      if (input.microsoftLogin) {
+        const m = input.microsoftLogin;
+        const prevMs = current.extensionSettings?.microsoftLogin;
+        const msSecret = m.clientSecret ? encryptSecret(m.clientSecret) : prevMs?.clientSecret;
+        if (m.enabled && (!m.clientId || !msSecret)) throw badRequest("Application (client) ID and client secret are required to enable Microsoft sign-in");
+        ext.microsoftLogin = { enabled: m.enabled, clientId: m.clientId, clientSecret: msSecret, tenant: m.tenant };
+      }
+      patch = { extensionSettings: ext };
       break;
     }
     default:

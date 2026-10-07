@@ -55,8 +55,9 @@ export const contactsRepository = {
   },
 
   /** Active contacts for a campaign audience. */
-  async listAudience(channelId: string, audience: { groupIds?: string[]; contactIds?: string[] }): Promise<Contact[]> {
+  async listAudience(channelId: string, audience: { groupIds?: string[]; contactIds?: string[]; where?: SQL }): Promise<Contact[]> {
     const conds: SQL[] = [eq(contacts.channelId, channelId), eq(contacts.status, "active")];
+    if (audience.where) conds.push(audience.where);
     if (audience.contactIds?.length) conds.push(inArray(contacts.id, audience.contactIds));
     if (audience.groupIds?.length) {
       conds.push(or(...audience.groupIds.map((g) => sql`JSON_CONTAINS(${contacts.groups}, JSON_QUOTE(${g}))`))!);

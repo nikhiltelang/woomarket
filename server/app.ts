@@ -16,6 +16,7 @@ import { asyncHandler } from "./lib/http";
 import { UPLOADS_DIR } from "./lib/uploads";
 import { requestLogger } from "./middlewares/request-log";
 import { publicApiRoutes } from "./routes/public-api.routes";
+import { trackingRoutes } from "./routes/tracking.routes";
 
 export interface CreateAppOptions {
   sessionStore?: session.Store;
@@ -122,6 +123,7 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
   app.get("/sitemap.xml", asyncHandler(sitemapXml));
 
   app.use(webhookRoutes);
+  app.use(trackingRoutes);
   // Public API: access-key authentication only (no session, no CSRF).
   app.use("/api/v1", publicApiRoutes);
   app.use("/api", authenticate, maintenanceGuard, apiRateLimiter, csrfMiddleware, apiRouter());

@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import { emit } from "../services/webhooks.service";
+import { changedFields, contactData, emitContactsCreated, emitForChannel, hasSubscribers } from "../services/webhook-events";
 import { parse as parseCsv } from "csv-parse/sync";
 import { bulkIdsSchema, contactListQuery, contactSchema, updateContactSchema } from "@shared/validation";
 import type { Contact, ContactFields } from "@shared/schema";
@@ -51,6 +53,7 @@ export async function createContact(req: Request, res: Response) {
     createdBy: req.user!.id,
   });
   await activityRepository.record(req, req.user!.id, "contact_created", { type: "contact", id: contact.id });
+  emit(channel.createdBy, "contact.created", { contact: contactData(contact) });
   res.status(201).json({ data: contact });
 }
 
@@ -62,6 +65,8 @@ export async function updateContact(req: Request, res: Response) {
   }
   const updated = await contactsRepository.update(contact.id, { ...input, email: input.email === "" ? null : input.email });
   await activityRepository.record(req, req.user!.id, "contact_updated", { type: "contact", id: contact.id });
+  const changed = updated ? changedFields(contact, updated) : [];
+  if (updated && changed.length) emitForChannel(updated.channelId, "contact.updated", { contact: contactData(updated), changed });
   res.json({ data: updated });
 }
 
@@ -139,6 +144,9 @@ export async function importContacts(req: Request, res: Response) {
   // Contacts already on the number (found before inserting) are the ones whose fields may be merged.
   const withFields = valid.filter((c) => Object.keys(c.metadata).length);
   const existing = updateExisting && withFields.length ? await contactsRepository.existingPhones(channel.id, withFields.map((c) => c.phone)) : new Set<string>();
+  // Phones already on the number before the import, so only new contacts send contact.created.
+  const notify = await hasSubscribers(channel.createdBy, "contact.created");
+  const before = notify ? await contactsRepository.existingPhones(channel.id, valid.map((c) => c.phone)) : new Set<string>();
   const imported = await contactsRepository.insertManyIgnoreDuplicates(
     valid.map((c) => ({
       channelId: channel.id,
@@ -153,6 +161,7 @@ export async function importContacts(req: Request, res: Response) {
       createdBy: req.user!.id,
     })),
   );
+  if (notify) void emitContactsCreated(channel.createdBy, channel.id, valid.map((c) => c.phone).filter((p) => !before.has(p)));
   const toMerge = withFields.filter((c) => existing.has(c.phone));
   if (toMerge.length) await contactsRepository.mergeFields(channel.id, toMerge.map((c) => ({ phone: c.phone, metadata: c.metadata })));
   const updated = toMerge.length;

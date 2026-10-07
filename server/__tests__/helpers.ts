@@ -44,6 +44,7 @@ export function makeUser(overrides: Partial<User> = {}): User {
     paystackCustomerCode: null,
     mercadopagoCustomerId: null,
     accessLevel: null,
+    twoFactorEnabledAt: null,
     ...overrides,
   };
 }
@@ -90,6 +91,7 @@ export function makeSystemConfig(overrides: Partial<SystemConfig> = {}): SystemC
     forceSecurePassword: true,
     kycVerification: false,
     emailVerification: false,
+    twoFactorPolicy: "optional",
     emailNotification: true,
     mobileVerification: false,
     smsNotification: true,
@@ -138,6 +140,8 @@ export function mockSystemConfig(overrides: Partial<SystemConfig> = {}) {
     emailVerification: Boolean(cfg.emailVerification),
     languageOption: false,
     googleLogin: false,
+    microsoftLogin: false,
+    twoFactorPolicy: (cfg.twoFactorPolicy ?? "optional") as PublicConfig["twoFactorPolicy"],
     frontend: {},
     gdprCookie: cfg.gdprCookie!,
     customCss: "",

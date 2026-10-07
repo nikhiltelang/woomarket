@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Group } from "@shared/schema";
+import { Link } from "wouter";
+import type { Group, Segment } from "@shared/schema";
 import { useChannel } from "@/contexts/channel";
 import { parseCsv } from "@/lib/csv";
 import { formatNumber } from "@/lib/utils";
 import { Field, Input, Select } from "@/components/ui/form";
 import { Badge } from "@/components/ui/display";
 
-export type AudienceType = "all_contacts" | "group" | "csv";
+export type AudienceType = "all_contacts" | "group" | "segment" | "csv";
 
 export interface AudienceValue<Row> {
   targetAudience: AudienceType;
   targetGroupId: string;
+  targetSegmentId?: string;
   csvData: Row[];
 }
 
@@ -38,11 +40,14 @@ export function AudiencePicker<Row>({
   const channelId = activeChannel!.id;
   const [csvInfo, setCsvInfo] = useState<{ name: string; skipped: number } | null>(null);
   const groups = useQuery<{ data: GroupRow[] }>({ queryKey: ["/api/groups", { channelId }] });
+  const segments = useQuery<{ data: Segment[] }>({ queryKey: ["/api/segments"], enabled: value.targetAudience === "segment" });
   const countParams =
-    value.targetAudience === "csv" ? null : { channelId, targetAudience: value.targetAudience, targetGroupId: value.targetGroupId || undefined };
+    value.targetAudience === "csv"
+      ? null
+      : { channelId, targetAudience: value.targetAudience, targetGroupId: value.targetGroupId || undefined, targetSegmentId: value.targetSegmentId || undefined };
   const count = useQuery<{ count: number }>({
     queryKey: [`/api/${kind}-marketing/audience`, countParams ?? {}],
-    enabled: Boolean(countParams) && (value.targetAudience !== "group" || Boolean(value.targetGroupId)),
+    enabled: Boolean(countParams) && (value.targetAudience !== "group" || Boolean(value.targetGroupId)) && (value.targetAudience !== "segment" || Boolean(value.targetSegmentId)),
   });
 
   const onFile = async (file: File | undefined) => {
@@ -62,6 +67,7 @@ export function AudiencePicker<Row>({
         <Select id={`${kind}-aud`} value={value.targetAudience} onChange={(e) => onChange({ ...value, targetAudience: e.target.value as AudienceType })}>
           <option value="all_contacts">All active contacts on {activeChannel!.name}</option>
           <option value="group">A contact group</option>
+          <option value="segment">A segment (saved filter)</option>
           <option value="csv">Upload a CSV list</option>
         </Select>
       </Field>
@@ -75,13 +81,25 @@ export function AudiencePicker<Row>({
           ))}
         </Select>
       )}
+      {value.targetAudience === "segment" && (
+        <Field hint={segments.data && !segments.data.data.length ? <>No segments yet. <Link href="/segments" className="text-primary hover:underline">Create one</Link></> : "Matched when the campaign starts, so new contacts who fit are included."}>
+          <Select value={value.targetSegmentId ?? ""} onChange={(e) => onChange({ ...value, targetSegmentId: e.target.value })} aria-label="Segment">
+            <option value="">Choose a segment…</option>
+            {segments.data?.data.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
       {value.targetAudience === "csv" && (
         <Field hint={csvHint}>
           <Input type="file" accept=".csv,text/csv" className="pt-1.5" onChange={(e) => void onFile(e.target.files?.[0])} aria-label="CSV file" />
         </Field>
       )}
       <p className="text-xs text-fg-muted">
-        {size === undefined ? (
+        {(value.targetAudience === "group" && !value.targetGroupId) || (value.targetAudience === "segment" && !value.targetSegmentId) ? null : size === undefined ? (
           "Counting recipients…"
         ) : (
           <>

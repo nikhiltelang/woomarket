@@ -39,6 +39,24 @@ export async function startSession(req: Request, res: Response, user: User) {
   };
 }
 
+const PENDING_2FA_MS = 5 * 60_000;
+
+/**
+ * Finishes a successful first factor (password, SSO, email code). With two-factor
+ * authentication on, the session only remembers who is half-signed-in until the code arrives.
+ */
+export async function completeSignIn(req: Request, res: Response, user: User, via: string) {
+  if (user.twoFactorEnabledAt) {
+    await regenerate(req);
+    req.session.pending2fa = { userId: user.id, expiresAt: Date.now() + PENDING_2FA_MS, attempts: 0, via };
+    await new Promise<void>((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
+    return { twoFactorRequired: true as const };
+  }
+  const result = await startSession(req, res, user);
+  await activityRepository.record(req, user.id, "login", undefined, via === "password" ? undefined : { via });
+  return result;
+}
+
 /** Blocks sign-in for accounts that aren't allowed to use the platform. */
 async function assertCanSignIn(user: User) {
   if (user.status === "banned") throw forbidden("This account has been suspended. Contact support if you think this is a mistake.", "ACCOUNT_BANNED");
@@ -70,9 +88,7 @@ export async function login(req: Request, res: Response) {
     throw unauthorized("Invalid username or password");
   }
   await assertCanSignIn(user);
-  const result = await startSession(req, res, user);
-  await activityRepository.record(req, user.id, "login");
-  res.json(result);
+  res.json(await completeSignIn(req, res, user, "password"));
 }
 
 /** Creates a tenant admin with the Free plan and the lowest access level. */
@@ -140,7 +156,7 @@ export async function verifyEmail(req: Request, res: Response) {
   const verified = (await usersRepository.update(user.id, { isEmailVerified: true }))!;
   if (verified.status !== "active") throw forbidden("Your account is not active.", "ACCOUNT_INACTIVE");
   await activityRepository.record(req, user.id, "email_verified");
-  res.json(await startSession(req, res, verified));
+  res.json(await completeSignIn(req, res, verified, "email_code"));
 }
 
 /** POST /api/users/resend-verification — same response whether or not the address exists. */

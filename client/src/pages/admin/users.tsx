@@ -141,6 +141,7 @@ function UserDetail({ userId, onClose }: { userId: string | null; onClose: () =>
   });
   const unban = useMutation({ mutationFn: () => apiRequest("PUT", `/api/admin/users/${userId}/unban`), onSuccess: done("User unbanned"), onError: fail });
   const toggle = useMutation({ mutationFn: (what: "email" | "mobile") => apiRequest("PUT", `/api/admin/users/${userId}/toggle-${what}-verify`), onSuccess: done("Verification updated"), onError: fail });
+  const resetTwoFactor = useMutation({ mutationFn: () => apiRequest("POST", `/api/admin/users/${userId}/2fa/reset`), onSuccess: done("Two-factor authentication reset"), onError: fail });
   const setStatus = useMutation({ mutationFn: (status: string) => apiRequest("PUT", `/api/admin/users/${userId}/admin-update`, { status }), onSuccess: done("Status updated"), onError: fail });
 
   const u = data?.data;
@@ -174,6 +175,23 @@ function UserDetail({ userId, onClose }: { userId: string | null; onClose: () =>
                 <BadgeCheck className="h-3.5 w-3.5" /> Mobile: {u.isMobileVerified ? "verified — mark unverified" : "unverified — mark verified"}
               </Button>
             </div>
+          </section>
+
+          <section className="border-t border-border pt-4">
+            <h3 className="mb-1 font-medium">Two-factor authentication</h3>
+            <p className="mb-3 text-fg-muted">{"twoFactorEnabled" in u && u.twoFactorEnabled ? "On. Reset it if they lost their phone and recovery codes; they'll set it up again at their next sign-in if it's required." : "Off."}</p>
+            {"twoFactorEnabled" in u && u.twoFactorEnabled && !isSelf && (
+              <Button
+                size="sm"
+                variant="outline"
+                loading={resetTwoFactor.isPending}
+                onClick={async () => {
+                  if (await confirm({ title: `Reset two-factor authentication for ${u.username}?`, description: "Their authenticator and recovery codes stop working. Make sure you've confirmed who you're talking to.", confirmText: "Reset", destructive: true })) resetTwoFactor.mutate();
+                }}
+              >
+                <ShieldOff className="h-3.5 w-3.5" /> Reset 2FA
+              </Button>
+            )}
           </section>
 
           {u.role === "admin" && (

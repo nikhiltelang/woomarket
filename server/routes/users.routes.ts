@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as c from "../controllers/users.controller";
+import { adminReset as resetTwoFactor } from "../controllers/two-factor.controller";
 import { requireRole } from "../middlewares/auth";
 import { asyncHandler as h } from "../lib/http";
 
@@ -15,6 +16,7 @@ userRoutes.put("/admin/users/:id/ban", sa, h(c.banUser));
 userRoutes.put("/admin/users/:id/unban", sa, h(c.unbanUser));
 userRoutes.put("/admin/users/:id/toggle-email-verify", sa, h(c.toggleVerification));
 userRoutes.put("/admin/users/:id/toggle-mobile-verify", sa, h(c.toggleVerification));
+userRoutes.post("/admin/users/:id/2fa/reset", sa, h(resetTwoFactor));
 userRoutes.get("/admin/users/:id", sa, h(c.getUser));
 userRoutes.put("/admin/users/:id/admin-update", sa, h(c.adminUpdateUser));
 userRoutes.delete("/admin/users/:id", sa, h(c.deleteUser));

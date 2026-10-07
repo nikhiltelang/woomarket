@@ -6,6 +6,8 @@ import { queryClient } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/contexts/auth";
 import { ChannelProvider } from "@/contexts/channel";
 import { SocketProvider } from "@/contexts/socket";
+import { TwoFactorGate } from "@/components/two-factor";
+import { twoFactorRequired } from "@shared/platform";
 import { PlatformProvider, usePlatform } from "@/contexts/platform";
 import { CookieBanner, MaintenanceScreen } from "@/components/public";
 import { ConfirmProvider, ToastProvider } from "@/components/ui/overlay";
@@ -20,6 +22,7 @@ const Dashboard = lazy(() => import("@/pages/dashboard"));
 const Inbox = lazy(() => import("@/pages/inbox"));
 const Contacts = lazy(() => import("@/pages/contacts"));
 const Groups = lazy(() => import("@/pages/groups"));
+const Segments = lazy(() => import("@/pages/segments"));
 const Templates = lazy(() => import("@/pages/templates"));
 const Campaigns = lazy(() => import("@/pages/campaigns"));
 const CampaignAnalytics = lazy(() => import("@/pages/campaign-analytics"));
@@ -48,6 +51,8 @@ const CachePage = lazy(() => import("@/pages/admin/cache"));
 const LogsPage = lazy(() => import("@/pages/admin/logs"));
 const ReportRequest = lazy(() => import("@/pages/report-request"));
 const ApiKeys = lazy(() => import("@/pages/api-keys"));
+const Webhooks = lazy(() => import("@/pages/webhooks"));
+const Preferences = lazy(() => import("@/pages/preferences"));
 
 const TENANT: Role[] = ["admin", "team"];
 const SUPER: Role[] = ["superadmin"];
@@ -65,6 +70,7 @@ const routes: RouteDef[] = [
   { path: "/inbox", component: Inbox, roles: TENANT, permission: "inbox:view", channel: true },
   { path: "/contacts", component: Contacts, roles: TENANT, permission: "contacts:view", channel: true },
   { path: "/groups", component: Groups, roles: TENANT, permission: "contacts:view", channel: true },
+  { path: "/segments", component: Segments, roles: TENANT, permission: "contacts:view", channel: true },
   { path: "/templates", component: Templates, roles: TENANT, permission: "templates:view", channel: true },
   { path: "/campaigns", component: Campaigns, roles: TENANT, permission: "campaigns:view", channel: true },
   { path: "/analytics/campaign/:campaignId", component: CampaignAnalytics, roles: TENANT, permission: "campaigns:view" },
@@ -74,7 +80,9 @@ const routes: RouteDef[] = [
   { path: "/team", component: Team, roles: TENANT, permission: "team:view" },
   { path: "/plans", component: Plans, roles: TENANT },
   { path: "/support", component: ReportRequest, roles: TENANT },
+  { path: "/preferences", component: Preferences, roles: TENANT },
   { path: "/developers/api-keys", component: ApiKeys, roles: ["admin"] },
+  { path: "/developers/webhooks", component: Webhooks, roles: ["admin"] },
   { path: "/account", component: Account },
   { path: "/admin", component: AdminOverview, roles: SUPER },
   { path: "/users/send-notification", component: SendNotification, roles: SUPER },
@@ -104,6 +112,7 @@ function Authenticated() {
   if (config?.maintenance.enabled && user.role !== "superadmin") {
     return <MaintenanceScreen title={config.maintenance.title} content={config.maintenance.content} onSignOut={() => void logout()} />;
   }
+  if (twoFactorRequired(user.role, config?.twoFactorPolicy) && !user.twoFactorEnabled) return <TwoFactorGate />;
 
   return (
     <ChannelProvider>

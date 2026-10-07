@@ -26,6 +26,7 @@ async function load(): Promise<Snapshot> {
     languagesRepository.listEnabled(),
   ]);
   const google = system.extensionSettings?.googleLogin;
+  const microsoft = system.extensionSettings?.microsoftLogin;
   const pub: PublicConfig = {
     siteTitle: system.siteTitle ?? panel.name,
     tagline: panel.tagline,
@@ -40,6 +41,8 @@ async function load(): Promise<Snapshot> {
     emailVerification: system.emailVerification ?? false,
     languageOption: (system.languageOption ?? true) && languages.length > 1,
     googleLogin: Boolean(google?.enabled && google.clientId && google.clientSecret),
+    microsoftLogin: Boolean(microsoft?.enabled && microsoft.clientId && microsoft.clientSecret),
+    twoFactorPolicy: (["superadmin", "admins"].includes(system.twoFactorPolicy ?? "") ? system.twoFactorPolicy : "optional") as PublicConfig["twoFactorPolicy"],
     frontend: system.frontendSettings ?? {},
     gdprCookie: system.gdprCookie ?? { enabled: false, bannerText: "", acceptButtonText: "Accept", declineButtonText: "Decline", policyUrl: "", cookieLifespanDays: 365 },
     customCss: system.customCss ?? "",

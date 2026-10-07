@@ -1,3 +1,4 @@
+import { webhookWorker } from "./services/webhooks.service";
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
@@ -77,6 +78,7 @@ export async function start(): Promise<void> {
     await reconcileStaleRuns().catch((err) => logger.error({ err }, "Update-run reconciler failed"));
     messageQueueWorker.start();
     await marketingWorker.start();
+    webhookWorker.start();
     startScheduler();
   }
 
@@ -93,6 +95,7 @@ export async function start(): Promise<void> {
     stopScheduler();
     await messageQueueWorker.stop();
     await marketingWorker.stop();
+    await webhookWorker.stop();
     await closeRealtime();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     server.closeAllConnections?.();

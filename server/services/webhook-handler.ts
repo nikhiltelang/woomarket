@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import type { WebhookEvent } from "@shared/webhooks";
+import { emit } from "./webhooks.service";
+import { contactData, emitForChannel } from "./webhook-events";
 import { webhookDedup, type Channel, type Conversation, type Message } from "@shared/schema";
 import { db } from "../db";
 import { config } from "../config";
@@ -93,6 +96,7 @@ async function handleInbound(channel: Channel, msg: InboundMessage, profiles: { 
       source: "whatsapp",
       lastContact: at,
     });
+    emit(channel.createdBy, "contact.created", { contact: contactData(contact) });
   } else {
     await contactsRepository.update(contact.id, { lastContact: at });
   }
@@ -131,13 +135,27 @@ async function handleInbound(channel: Channel, msg: InboundMessage, profiles: { 
   await conversationsRepository.recordMessage(conversation.id, { text: content, at, inbound: true });
 
   // A reply to a campaign message counts towards the campaign's replied total.
+  let campaignId: string | null = null;
   if (msg.context?.id) {
     const recipient = await campaignsRepository.findRecipientByWamid(msg.context.id);
+    campaignId = recipient?.campaignId ?? null;
     if (recipient && recipient.status !== "replied") {
       await campaignsRepository.updateRecipient(recipient.id, { status: "replied" });
       await campaignsRepository.increment(recipient.campaignId, "repliedCount");
     }
   }
+  emit(channel.createdBy, "message.received", {
+    messageId: msg.id,
+    channelId: channel.id,
+    conversationId: conversation.id,
+    contact: { id: contact.id, name: contact.name, phone },
+    type: msg.type,
+    text: content,
+    mediaId: media?.id ?? null,
+    inReplyTo: msg.context?.id ?? null,
+    campaignId,
+    receivedAt: at.toISOString(),
+  });
 
   const fresh = await conversationsRepository.findById(conversation.id);
   if (created) realtime.toChannel(channel.id, "conversation_created", { conversation: fresh });
@@ -161,7 +179,28 @@ interface StatusUpdate {
   errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[];
 }
 
-async function handleStatus(st: StatusUpdate) {
+const STATUS_EVENTS: Record<string, WebhookEvent> = { sent: "message.sent", delivered: "message.delivered", read: "message.read", failed: "message.failed" };
+
+/** Records a status update; emits a webhook event only when the status actually moved forward. */
+async function handleStatus(st: StatusUpdate, channelId?: string) {
+  const recipient = await campaignsRepository.findRecipientByWamid(st.id);
+  const advanced = await applyStatus(st, recipient);
+  const event = STATUS_EVENTS[st.status];
+  if (!advanced || !event || !channelId) return;
+  const error = st.errors?.[0];
+  emitForChannel(channelId, event, {
+    messageId: st.id,
+    channelId,
+    to: st.recipient_id ? `+${st.recipient_id.replace(/^\+/, "")}` : null,
+    status: st.status,
+    ...(error ? { error: { code: String(error.code ?? ""), message: error.error_data?.details ?? error.message ?? error.title ?? "Delivery failed" } } : {}),
+    campaignId: recipient?.campaignId ?? null,
+    at: (st.timestamp ? new Date(Number(st.timestamp) * 1000) : new Date()).toISOString(),
+  });
+}
+
+async function applyStatus(st: StatusUpdate, recipient: Awaited<ReturnType<typeof campaignsRepository.findRecipientByWamid>>): Promise<boolean> {
+  let advanced = false;
   const at = st.timestamp ? new Date(Number(st.timestamp) * 1000) : new Date();
   const error = st.errors?.[0];
   const errorText = error ? (error.error_data?.details ?? error.message ?? error.title ?? "Delivery failed") : null;
@@ -169,8 +208,9 @@ async function handleStatus(st: StatusUpdate) {
   const message: Message | undefined = await messagesRepository.findByWhatsappId(st.id);
   if (message) {
     const prev = message.status ?? "sent";
-    const advance = st.status === "failed" ? prev !== "read" : (STATUS_RANK[st.status] ?? -1) > (STATUS_RANK[prev] ?? -1);
+    const advance = st.status === "failed" ? prev !== "read" && prev !== "failed" : (STATUS_RANK[st.status] ?? -1) > (STATUS_RANK[prev] ?? -1);
     if (advance) {
+      advanced = true;
       await messagesRepository.update(message.id, {
         status: st.status,
         ...(st.status === "delivered" ? { deliveredAt: at } : {}),
@@ -188,18 +228,17 @@ async function handleStatus(st: StatusUpdate) {
     }
   }
 
-  const recipient = await campaignsRepository.findRecipientByWamid(st.id);
   if (recipient) {
     const prev = recipient.status ?? "sent";
-    if (prev === "replied" || prev === "failed") return;
+    if (prev === "replied" || prev === "failed") return advanced;
     const prevRank = STATUS_RANK[prev] ?? 1;
     if (st.status === "failed") {
       await campaignsRepository.updateRecipient(recipient.id, { status: "failed", errorCode: String(error?.code ?? ""), errorMessage: errorText });
       await campaignsRepository.increment(recipient.campaignId, "failedCount");
-      return;
+      return true;
     }
     const rank = STATUS_RANK[st.status] ?? -1;
-    if (rank <= prevRank) return;
+    if (rank <= prevRank) return advanced;
     await campaignsRepository.updateRecipient(recipient.id, {
       status: st.status,
       ...(rank >= 2 ? { deliveredAt: recipient.deliveredAt ?? at } : {}),
@@ -209,7 +248,9 @@ async function handleStatus(st: StatusUpdate) {
     if (rank >= 3 && prevRank < 3) await campaignsRepository.increment(recipient.campaignId, "readCount");
     const campaign = await campaignsRepository.findById(recipient.campaignId);
     if (campaign) realtime.toChannel(campaign.channelId, "campaign_updated", { campaign });
+    return true;
   }
+  return advanced;
 }
 
 async function handleTemplateStatus(value: { event?: string; message_template_id?: string | number; reason?: string }) {
@@ -239,7 +280,7 @@ export async function processWebhookPayload(payload: any, onlyChannelId?: string
           continue;
         }
         for (const msg of value.messages ?? []) await handleInbound(channel, msg, value.contacts ?? []);
-        for (const st of value.statuses ?? []) await handleStatus(st);
+        for (const st of value.statuses ?? []) await handleStatus(st, channel.id);
       } else if (change.field === "message_template_status_update") {
         await handleTemplateStatus(value);
       }

@@ -90,6 +90,11 @@ export const campaignsRepository = {
 
   // --- Recipients ---------------------------------------------------------
 
+  /** Recipients held back for an A/B winner are cancelled with the campaign. */
+  async cancelHeld(campaignId: string): Promise<void> {
+    await db.update(campaignRecipients).set({ status: "cancelled" }).where(and(eq(campaignRecipients.campaignId, campaignId), eq(campaignRecipients.status, "held")));
+  },
+
   async insertRecipients(rows: Omit<typeof campaignRecipients.$inferInsert, "id">[]): Promise<number> {
     let inserted = 0;
     for (let i = 0; i < rows.length; i += 500) {

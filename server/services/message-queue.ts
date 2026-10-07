@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { campaignCounts, emitForChannel } from "./webhook-events";
 import { and, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { messageQueue, type Campaign, type Channel, type QueuedMessage, type Template } from "@shared/schema";
 import { db } from "../db";
@@ -83,10 +84,14 @@ const backoffMs = (attempt: number) => Math.min(30_000 * 2 ** (attempt - 1), 15 
 /** Finishes a running campaign once nothing is left in the queue for it. */
 export async function completeCampaignIfDone(campaignId: string): Promise<void> {
   if ((await queueRepository.pendingForCampaign(campaignId)) > 0) return;
+  // Held recipients still wait for the A/B winner.
+  const running = await campaignsRepository.findById(campaignId);
+  if ((running?.abTest as { phase?: string } | null)?.phase === "testing") return;
   if (await campaignsRepository.transition(campaignId, ["running"], "completed", { completedAt: new Date() })) {
     const campaign = await campaignsRepository.findById(campaignId);
     realtime.toChannel(campaign?.channelId, "campaign_updated", { campaign });
     log.info({ campaignId }, "Campaign completed");
+    if (campaign) emitForChannel(campaign.channelId, "campaign.completed", { channel: "whatsapp", campaignId, name: campaign.name, ...campaignCounts(campaign), completedAt: new Date().toISOString() });
   }
 }
 

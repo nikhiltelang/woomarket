@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { abOverview, decideTest } from "../services/ab-test.service";
 import { z } from "zod";
 import { marketingStatusSchema, paginationQuery, segmentsSchema, smsCampaignSchema, smsGatewaySchema, testSmsSchema } from "@shared/validation";
 import type { SmsCampaign, SmsGateway } from "@shared/schema";
@@ -9,9 +10,11 @@ import { maskSecret, decryptSecret } from "../lib/crypto";
 import { childLogger } from "../lib/logger";
 import { publicBaseUrl } from "../lib/tokens";
 import { smsCampaignsRepository, smsGatewayRepository } from "../repositories/sms.repository";
+import { loadSegment } from "../services/segments.service";
 import { groupsRepository } from "../repositories/groups.repository";
 import { activityRepository } from "../repositories/activity.repository";
 import { assertChannelAccess, requireTenantId } from "../middlewares/tenant";
+import { deleteCampaignLinks, linkStats } from "../services/tracking.service";
 import { assertWithinPlan } from "../middlewares/subscription";
 import { getSmsProvider, SmsProviderError, verifyTwilioSignature } from "../services/sms/providers";
 import { changeSmsCampaignStatus, handleSmsStatus, resolveSmsAudience, startSmsCampaign } from "../services/marketing.service";
@@ -31,6 +34,7 @@ async function campaignValues(req: Request, input: z.infer<typeof smsCampaignSch
     if (!group || group.createdBy !== req.user!.tenantId) throw notFound("Group");
     targetGroupName = group.name;
   }
+  if (input.targetAudience === "segment") targetGroupName = (await loadSegment(requireTenantId(req.user), input.targetSegmentId!)).name;
   const seg = calculateSegments(input.message);
   return {
     channelId,
@@ -38,11 +42,16 @@ async function campaignValues(req: Request, input: z.infer<typeof smsCampaignSch
     message: input.message,
     targetAudience: input.targetAudience,
     targetGroupId: input.targetAudience === "group" ? input.targetGroupId! : null,
+    targetSegmentId: input.targetAudience === "segment" ? input.targetSegmentId! : null,
     targetGroupName,
     csvData: input.targetAudience === "csv" ? input.csvData : [],
     scheduledAt: input.scheduledAt ?? null,
     status: input.scheduledAt ? "scheduled" : "draft",
     smsSegmentsPerRecipient: seg.segments,
+    trackClicks: input.trackClicks,
+    utm: input.utm ?? null,
+    delivery: input.delivery ?? null,
+    abTest: input.abTest?.enabled ? input.abTest : null,
   };
 }
 
@@ -102,6 +111,7 @@ export async function deleteCampaign(req: Request, res: Response) {
   const c = await loadCampaign(req);
   if (["sending", "paused"].includes(c.status ?? "")) throw conflict("Cancel the campaign before deleting it", "CAMPAIGN_ACTIVE");
   await smsCampaignsRepository.delete(c.id);
+  await deleteCampaignLinks("sms", c.id);
   await activityRepository.record(req, req.user!.id, "sms_campaign_deleted", { type: "sms_campaign", id: c.id });
   res.json({ success: true });
 }
@@ -128,9 +138,9 @@ export async function recipients(req: Request, res: Response) {
 
 export async function audienceCount(req: Request, res: Response) {
   const tenantId = requireTenantId(req.user);
-  const q = parse(z.object({ channelId: z.string().uuid(), targetAudience: z.enum(["all_contacts", "group"]), targetGroupId: z.string().uuid().optional() }), req.query);
+  const q = parse(z.object({ channelId: z.string().uuid(), targetAudience: z.enum(["all_contacts", "group", "segment"]), targetGroupId: z.string().uuid().optional(), targetSegmentId: z.string().uuid().optional() }), req.query);
   await assertChannelAccess(req.user!, q.channelId);
-  const rows = await resolveSmsAudience({ userId: tenantId, channelId: q.channelId, targetAudience: q.targetAudience, targetGroupId: q.targetGroupId ?? null, csvData: [] } as never);
+  const rows = await resolveSmsAudience({ userId: tenantId, channelId: q.channelId, targetAudience: q.targetAudience, targetGroupId: q.targetGroupId ?? null, targetSegmentId: q.targetSegmentId ?? null, csvData: [] } as never);
   res.json({ count: rows.length });
 }
 
@@ -230,4 +240,27 @@ export async function vonageStatus(req: Request, res: Response) {
   if (p.status === "delivered") await handleSmsStatus(messageId, "delivered");
   else if (["failed", "rejected", "expired"].includes(p.status)) await handleSmsStatus(messageId, "failed", `Vonage ${p.status}${p["err-code"] ? ` (error ${p["err-code"]})` : ""}`);
   res.sendStatus(204);
+}
+
+/** GET /api/sms-marketing/campaigns/:id/links — clicks per link. */
+export async function campaignLinks(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  res.json({ data: await linkStats("sms", c.id) });
+}
+
+const decideBody = z.object({ winner: z.enum(["A", "B"]).optional() });
+
+/** GET …/campaigns/:id/ab — A/B settings, progress and live results. */
+export async function abTest(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  res.json({ data: await abOverview("sms", c.id) });
+}
+
+/** POST …/campaigns/:id/ab/decide — pick the winner now (optionally a specific one). */
+export async function abDecide(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  const { winner } = parseBody(decideBody, req);
+  const state = await decideTest("sms", c.id, { winner, by: "manual" });
+  await activityRepository.record(req, req.user!.id, "ab_test_decided", { type: `${"sms"}_campaign`, id: c.id }, { winner: state.winner });
+  res.json({ data: state });
 }

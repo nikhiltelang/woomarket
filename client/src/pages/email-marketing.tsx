@@ -12,26 +12,26 @@ import { cn, formatDate, formatNumber } from "@/lib/utils";
 import { ChannelShell } from "@/components/channel-shell";
 import { useOpenFromQuery } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Spinner, StatCard, StatusBadge } from "@/components/ui/display";
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
-import { AudiencePicker, insertAtCursor, MergeTagButtons, type AudienceValue } from "@/components/marketing";
+import { DEFAULT_UTM, LinkStats, TrackingOptions, type TrackingValue } from "@/components/tracking-options";
+import { DEFAULT_DELIVERY, DeliveryOptions } from "@/components/delivery-options";
+import { AbTestFields, AbTestResults, DEFAULT_AB, type AbCommon } from "@/components/ab-test";
+import type { Delivery } from "@shared/sending";
+import { AudiencePicker, type AudienceValue } from "@/components/marketing";
 import { SmtpSettings } from "@/components/smtp-settings";
+import { EmailContentField } from "@/components/email-builder";
+import { renderDesign, starterDesign, type EmailDesign } from "@shared/email-design";
+
+const designed = (design: EmailDesign) => ({ design, contentHtml: renderDesign(design) });
 
 type Campaign = Omit<EmailCampaign, "csvData"> & { csvCount: number };
 type CsvRow = { email: string; name?: string };
 const EMAIL_TAGS = [...MERGE_TAGS.filter((t) => t !== "{{phone}}"), "{{unsubscribe_url}}"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ACTIVE = ["sending"];
-
-const BLANK_HTML = `<!doctype html>
-<html><body style="margin:0;background:#f3f4f6;font-family:Arial,sans-serif">
-<div style="max-width:600px;margin:24px auto;background:#ffffff;padding:32px;border-radius:8px;color:#111827;font-size:16px;line-height:1.6">
-<h1 style="margin-top:0">Hello {{first_name}}</h1>
-<p>Write your message here.</p>
-</div>
-</body></html>`;
 
 /** Renders sample merge values for the preview (escaped like the server does). */
 function previewHtml(html: string) {
@@ -54,11 +54,18 @@ interface ComposerState {
   senderName: string;
   replyTo: string;
   contentHtml: string;
+  design: EmailDesign | null;
   templateId: string | null;
   audience: AudienceValue<CsvRow>;
   when: "draft" | "now" | "later";
   scheduledAt: string;
+  tracking: TrackingValue;
+  delivery: Delivery;
+  ab: EmailAb;
 }
+
+type EmailAb = AbCommon & { subjectB: string; previewTextB: string; contentHtmlB: string | null };
+const DEFAULT_EMAIL_AB: EmailAb = { ...DEFAULT_AB, subjectB: "", previewTextB: "", contentHtmlB: null };
 
 const toLocalInput = (d: string | Date) => {
   const date = new Date(d);
@@ -70,7 +77,6 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
   const { activeChannel } = useChannel();
   const templates = useQuery<{ data: EmailTemplate[] }>({ queryKey: ["/api/email-marketing/templates"], enabled: open });
   const smtp = useQuery<{ effective: { fromName?: string; source: string } }>({ queryKey: ["/api/smtp/config"], enabled: open });
-  const htmlRef = useRef<HTMLTextAreaElement>(null);
   const fieldList = useContactFields();
   const customTags = (fieldList.data?.data ?? []).map((f) => `{{${f.key}}}`);
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -84,11 +90,14 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
       previewText: "",
       senderName: "",
       replyTo: "",
-      contentHtml: BLANK_HTML,
+      ...designed(starterDesign("newsletter")),
       templateId: null,
       audience: { targetAudience: "all_contacts", targetGroupId: "", csvData: [] },
       when: "now",
       scheduledAt: "",
+      tracking: { trackClicks: true, utm: { ...DEFAULT_UTM } },
+      delivery: { ...DEFAULT_DELIVERY },
+      ab: { ...DEFAULT_EMAIL_AB },
     };
   }
 
@@ -102,15 +111,19 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
         senderName: editing.senderName ?? "",
         replyTo: editing.replyTo ?? "",
         contentHtml: editing.contentHtml,
+        design: (editing.design as EmailDesign | null) ?? null,
         templateId: editing.templateId,
         // CSV lists aren't sent back to the browser; re-upload to change them.
-        audience: { targetAudience: (editing.targetAudience as AudienceValue<CsvRow>["targetAudience"]) ?? "all_contacts", targetGroupId: editing.targetGroupId ?? "", csvData: [] },
+        audience: { targetAudience: (editing.targetAudience as AudienceValue<CsvRow>["targetAudience"]) ?? "all_contacts", targetGroupId: editing.targetGroupId ?? "", targetSegmentId: editing.targetSegmentId ?? "", csvData: [] },
         when: editing.status === "scheduled" ? "later" : "draft",
         scheduledAt: editing.scheduledAt ? toLocalInput(editing.scheduledAt) : "",
+        tracking: { trackClicks: editing.trackClicks ?? true, utm: { ...DEFAULT_UTM, ...(editing.utm ?? {}) } },
+        delivery: { ...DEFAULT_DELIVERY, ...((editing.delivery as Delivery | null) ?? {}) },
+        ab: { ...DEFAULT_EMAIL_AB, ...((editing.abTest as Partial<EmailAb> | null) ?? {}) },
       });
     } else {
       const b = blank();
-      if (seed) Object.assign(b, { contentHtml: seed.contentHtml, subject: seed.subject ?? "", previewText: seed.previewText ?? "", templateId: seed.isSystem ? null : seed.id, name: seed.name });
+      if (seed) Object.assign(b, { contentHtml: seed.contentHtml, design: (seed.design as EmailDesign | null) ?? null, subject: seed.subject ?? "", previewText: seed.previewText ?? "", templateId: seed.isSystem ? null : seed.id, name: seed.name });
       setS(b);
     }
   }, [open, editing, seed]);
@@ -127,11 +140,17 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
     senderName: s.senderName,
     replyTo: s.replyTo || null,
     contentHtml: s.contentHtml,
+    design: s.design,
     templateId: s.templateId,
     targetAudience: s.audience.targetAudience,
     targetGroupId: s.audience.targetGroupId || null,
+    targetSegmentId: s.audience.targetSegmentId || null,
     csvData: s.audience.csvData,
     scheduledAt: s.when === "later" && s.scheduledAt ? new Date(s.scheduledAt).toISOString() : null,
+    trackClicks: s.tracking.trackClicks,
+    utm: s.tracking.utm,
+    delivery: s.delivery,
+    abTest: s.ab.enabled ? { ...s.ab, previewTextB: s.ab.previewTextB || null } : null,
   });
 
   const save = useMutation({
@@ -179,7 +198,7 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
   });
 
   const set = <K extends keyof ComposerState>(k: K, val: ComposerState[K]) => setS((x) => ({ ...x, [k]: val }));
-  const audienceOk = s.audience.targetAudience === "all_contacts" || (s.audience.targetAudience === "group" ? !!s.audience.targetGroupId : s.audience.csvData.length > 0 || (editing?.targetAudience === "csv" && editing.csvCount > 0));
+  const audienceOk = s.audience.targetAudience === "all_contacts" || (s.audience.targetAudience === "group" ? !!s.audience.targetGroupId : s.audience.targetAudience === "segment" ? !!s.audience.targetSegmentId : s.audience.csvData.length > 0 || (editing?.targetAudience === "csv" && editing.csvCount > 0));
   const valid = s.name.trim() && s.subject.trim() && s.senderName.trim() && s.contentHtml.trim() && audienceOk && (s.when !== "later" || s.scheduledAt);
   const csvKept = editing?.targetAudience === "csv" && s.audience.targetAudience === "csv" && s.audience.csvData.length === 0;
 
@@ -233,7 +252,7 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
               value=""
               onChange={(e) => {
                 const t = templates.data?.data.find((x) => x.id === e.target.value);
-                if (t) setS((x) => ({ ...x, contentHtml: t.contentHtml, subject: x.subject || (t.subject ?? ""), previewText: x.previewText || (t.previewText ?? ""), templateId: t.isSystem ? null : t.id }));
+                if (t) setS((x) => ({ ...x, contentHtml: t.contentHtml, design: (t.design as EmailDesign | null) ?? null, subject: x.subject || (t.subject ?? ""), previewText: x.previewText || (t.previewText ?? ""), templateId: t.isSystem ? null : t.id }));
               }}
             >
               <option value="">Replace content with a template…</option>
@@ -245,18 +264,7 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
               ))}
             </Select>
           </Field>
-          <Field
-            label={
-              <span className="flex flex-wrap items-center justify-between gap-2">
-                HTML content
-                <MergeTagButtons tags={[...EMAIL_TAGS, ...customTags]} onInsert={(tag) => set("contentHtml", insertAtCursor(htmlRef.current, s.contentHtml, tag))} />
-              </span>
-            }
-            htmlFor="em-html"
-            hint="An unsubscribe link is added automatically if you don't place {{unsubscribe_url}} yourself."
-          >
-            <Textarea id="em-html" ref={htmlRef} rows={12} className="font-mono text-xs" spellCheck={false} value={s.contentHtml} onChange={(e) => set("contentHtml", e.target.value)} />
-          </Field>
+          <EmailContentField idPrefix="em" title={s.subject || s.name} mergeTags={[...EMAIL_TAGS, ...customTags]} value={{ contentHtml: s.contentHtml, design: s.design }} onChange={(v) => setS((x) => ({ ...x, ...v }))} />
           <AudiencePicker<CsvRow>
             kind="email"
             value={s.audience}
@@ -279,6 +287,25 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
             <Field label="Send at" htmlFor="em-at" hint="Your local time">
               <Input id="em-at" type="datetime-local" value={s.scheduledAt} onChange={(e) => set("scheduledAt", e.target.value)} />
             </Field>
+          )}
+          {s.when !== "draft" && <DeliveryOptions channel="email" idPrefix="em" value={s.delivery} onChange={(delivery) => set("delivery", delivery)} />}
+          <TrackingOptions channel="email" value={s.tracking} onChange={(tracking) => set("tracking", tracking)} campaignName={s.name} />
+          {s.when !== "draft" && (
+            <AbTestFields value={s.ab} onChange={(ab) => set("ab", ab)} metrics={s.tracking.trackClicks ? ["open", "click"] : ["open"]}>
+              <Field label="Variant B subject" htmlFor="em-subject-b" hint="Leave blank to test content only.">
+                <Input id="em-subject-b" value={s.ab.subjectB} onChange={(e) => set("ab", { ...s.ab, subjectB: e.target.value })} placeholder={s.subject} />
+              </Field>
+              <Checkbox
+                label="Different content for B"
+                checked={s.ab.contentHtmlB !== null}
+                onChange={(on) => set("ab", { ...s.ab, contentHtmlB: on ? s.contentHtml : null })}
+              />
+              {s.ab.contentHtmlB !== null && (
+                <Field label="Variant B content (HTML)" htmlFor="em-html-b">
+                  <Textarea id="em-html-b" rows={8} className="w-full font-mono text-xs" value={s.ab.contentHtmlB} onChange={(e) => set("ab", { ...s.ab, contentHtmlB: e.target.value })} />
+                </Field>
+              )}
+            </AbTestFields>
           )}
           <div className="flex flex-wrap gap-2 rounded-md border border-border p-3">
             <Input type="email" className="max-w-56 flex-1" placeholder="you@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} aria-label="Send a test to" />
@@ -322,9 +349,17 @@ function CampaignDetail({ campaign, onClose }: { campaign: Campaign | null; onCl
           <StatCard label="Recipients" value={formatNumber(total)} />
           <StatCard label="Delivered" value={formatNumber(d.deliveredCount)} hint="Accepted by the mail server" />
           <StatCard label="Opened" value={formatNumber(d.openedCount)} hint={`${pct(d.openedCount)}% open rate`} />
-          <StatCard label="Failed" value={formatNumber(d.failedCount)} />
+          <StatCard label="Clicked" value={formatNumber(d.clickedCount)} hint={`${pct(d.clickedCount)}% click rate · ${formatNumber(d.failedCount)} failed`} />
         </div>
         <ProgressBar value={total ? (((d.sentCount ?? 0) + (d.failedCount ?? 0)) / total) * 100 : 0} />
+        {(d.abTest as { enabled?: boolean } | null)?.enabled && (
+          <AbTestResults
+            basePath="/api/email-marketing/campaigns"
+            campaignId={d.id}
+            labels={{ A: `Subject: ${d.subject}`, B: `Subject: ${(d.abTest as { subjectB?: string }).subjectB || d.subject}${(d.abTest as { contentHtmlB?: string | null }).contentHtmlB ? " · different content" : ""}` }}
+          />
+        )}
+        {d.trackClicks && d.status !== "draft" && d.status !== "scheduled" && <LinkStats type="email" campaignId={d.id} delivered={d.deliveredCount ?? 0} />}
         <Card>
           <CardHeader
             title="Recipients"
@@ -434,7 +469,10 @@ function CampaignsTab({ onCompose }: { onCompose: (c: Campaign | null) => void }
                     <span className="shrink-0 text-xs text-fg-muted tabular-nums">{formatNumber(done)}/{formatNumber(total)}</span>
                   </div>
                 </Td>
-                <Td className="text-right tabular-nums">{formatNumber(c.openedCount)} <span className="text-xs text-fg-muted">({openRate}%)</span></Td>
+                <Td className="text-right tabular-nums">
+                  {formatNumber(c.openedCount)} <span className="text-xs text-fg-muted">({openRate}%)</span>
+                  {(c.clickedCount ?? 0) > 0 && <span className="block text-xs text-fg-muted">{formatNumber(c.clickedCount)} clicked</span>}
+                </Td>
                 <Td className="text-right tabular-nums">{formatNumber(c.failedCount)}</Td>
                 <Td className="text-right whitespace-nowrap">
                   <Button size="icon" variant="ghost" aria-label="View" onClick={() => setViewing(c)}><Eye className="h-4 w-4" /></Button>
@@ -479,12 +517,12 @@ function TemplatesTab({ onUse }: { onUse: (t: EmailTemplate) => void }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<EmailTemplate | "new" | null>(null);
-  const [form, setForm] = useState({ name: "", category: "promotional", subject: "", contentHtml: BLANK_HTML });
+  const [form, setForm] = useState<{ name: string; category: string; subject: string; contentHtml: string; design: EmailDesign | null }>({ name: "", category: "promotional", subject: "", ...designed(starterDesign("newsletter")) });
   const { data, isLoading } = useQuery<{ data: EmailTemplate[] }>({ queryKey: ["/api/email-marketing/templates"] });
 
   useEffect(() => {
-    if (editing === "new") setForm({ name: "", category: "promotional", subject: "", contentHtml: BLANK_HTML });
-    else if (editing) setForm({ name: editing.name, category: editing.category ?? "promotional", subject: editing.subject ?? "", contentHtml: editing.contentHtml });
+    if (editing === "new") setForm({ name: "", category: "promotional", subject: "", ...designed(starterDesign("newsletter")) });
+    else if (editing) setForm({ name: editing.name, category: editing.category ?? "promotional", subject: editing.subject ?? "", contentHtml: editing.contentHtml, design: (editing.design as EmailDesign | null) ?? null });
   }, [editing]);
 
   const save = useMutation({
@@ -555,7 +593,7 @@ function TemplatesTab({ onUse }: { onUse: (t: EmailTemplate) => void }) {
               </Select>
             </Field>
             <Field label="Default subject" htmlFor="et-sub"><Input id="et-sub" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></Field>
-            <Field label="HTML" htmlFor="et-html"><Textarea id="et-html" rows={14} className="font-mono text-xs" spellCheck={false} value={form.contentHtml} onChange={(e) => setForm({ ...form, contentHtml: e.target.value })} /></Field>
+            <EmailContentField idPrefix="et" title={form.subject || form.name} mergeTags={EMAIL_TAGS} value={{ contentHtml: form.contentHtml, design: form.design }} onChange={(v) => setForm((f) => ({ ...f, ...v }))} />
           </div>
           <EmailPreview html={form.contentHtml} className="min-h-[420px]" />
         </div>

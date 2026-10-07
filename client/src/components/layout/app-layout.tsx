@@ -5,7 +5,9 @@ import {
   Bell,
   Building2,
   ChevronDown,
+  Clock,
   ChevronsUpDown,
+  Filter,
   CreditCard,
   Bug,
   KeyRound,
@@ -25,6 +27,7 @@ import {
   UserCircle,
   Users,
   UsersRound,
+  Webhook,
   X,
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -125,6 +128,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
       items: [
         { href: "/contacts", label: t("nav.contacts"), icon: <Users className="h-4 w-4" />, permission: "contacts:view" },
         { href: "/groups", label: t("nav.groups"), icon: <UsersRound className="h-4 w-4" />, permission: "contacts:view" },
+        { href: "/segments", label: t("nav.segments"), icon: <Filter className="h-4 w-4" />, permission: "contacts:view" },
       ],
     },
     {
@@ -168,7 +172,13 @@ function useNav(): { title: string; items: NavItem[] }[] {
       items: [
         { href: "/team", label: t("nav.team"), icon: <Shield className="h-4 w-4" />, permission: "team:view" },
         { href: "/plans", label: t("nav.plan"), icon: <BarChart3 className="h-4 w-4" /> },
-        ...(user?.role === "admin" ? [{ href: "/developers/api-keys", label: t("nav.apiKeys"), icon: <KeyRound className="h-4 w-4" /> }] : []),
+        { href: "/preferences", label: t("nav.preferences"), icon: <Clock className="h-4 w-4" /> },
+        ...(user?.role === "admin"
+          ? [
+              { href: "/developers/api-keys", label: t("nav.apiKeys"), icon: <KeyRound className="h-4 w-4" /> },
+              { href: "/developers/webhooks", label: t("nav.webhooks"), icon: <Webhook className="h-4 w-4" /> },
+            ]
+          : []),
         { href: "/support", label: t("nav.reportRequest"), icon: <Bug className="h-4 w-4" /> },
       ],
     },

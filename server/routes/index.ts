@@ -7,11 +7,13 @@ import { appUpdateRouter } from "../app-update/controller";
 import { getRoot, readVersion } from "../app-update/controller";
 import { globalWebhookUrl } from "../controllers/webhooks.controller";
 import { authRoutes } from "./auth.routes";
+import { requireTwoFactorEnrollment } from "../controllers/two-factor.controller";
 import { userRoutes } from "./users.routes";
 import { teamRoutes } from "./team.routes";
 import { channelRoutes } from "./channels.routes";
 import { contactRoutes } from "./contacts.routes";
 import { groupRoutes } from "./groups.routes";
+import { segmentRoutes } from "./segments.routes";
 import { templateRoutes } from "./templates.routes";
 import { conversationRoutes } from "./conversations.routes";
 import { campaignRoutes } from "./campaigns.routes";
@@ -48,12 +50,14 @@ export function apiRouter(): Router {
 
   // --- Authenticated ------------------------------------------------------
   api.use(requireAuth);
+  api.use(requireTwoFactorEnrollment);
   api.get("/webhook/global-url", globalWebhookUrl);
   api.use(userRoutes);
   api.use("/team", teamRoutes);
   api.use(channelRoutes);
   api.use(contactRoutes);
   api.use("/groups", groupRoutes);
+  api.use("/segments", segmentRoutes);
   api.use("/templates", templateRoutes);
   api.use("/conversations", conversationRoutes);
   api.use("/campaigns", campaignRoutes);

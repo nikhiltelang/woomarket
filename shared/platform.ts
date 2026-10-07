@@ -32,6 +32,7 @@ export const systemSwitchesSchema = z
     emailVerification: bool,
     emailNotification: bool,
     languageOption: bool,
+    twoFactorPolicy: z.enum(["optional", "superadmin", "admins"]),
   })
   .partial();
 
@@ -63,6 +64,20 @@ export const socialLoginSchema = z.object({
     /** Omit to keep the stored secret. */
     clientSecret: z.string().trim().max(255).optional(),
   }),
+  microsoftLogin: z
+    .object({
+      enabled: bool,
+      clientId: z.string().trim().max(255),
+      clientSecret: z.string().trim().max(255).optional(),
+      /** "common", "organizations", "consumers", a directory (tenant) id or a verified domain */
+      tenant: z
+        .string()
+        .trim()
+        .max(255)
+        .regex(/^(common|organizations|consumers|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z0-9-]+(\.[a-z0-9-]+)+)$/i, "Use common, organizations, consumers, a directory ID or a domain")
+        .default("common"),
+    })
+    .optional(),
 });
 
 export const maintenanceSchema = z.object({
@@ -234,6 +249,8 @@ export interface PublicConfig {
   emailVerification: boolean;
   languageOption: boolean;
   googleLogin: boolean;
+  microsoftLogin: boolean;
+  twoFactorPolicy: TwoFactorPolicy;
   frontend: { heroTitle?: string; heroSubtitle?: string; features?: string[]; footerText?: string };
   gdprCookie: { enabled: boolean; bannerText: string; acceptButtonText: string; declineButtonText: string; policyUrl: string; cookieLifespanDays: number };
   customCss: string;
@@ -256,6 +273,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.inbox": "Inbox",
   "nav.contacts": "Contacts",
   "nav.groups": "Groups",
+  "nav.segments": "Segments",
   "nav.templates": "Templates",
   "nav.campaigns": "Campaigns",
   "nav.marketing": "Marketing",
@@ -288,7 +306,9 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.reportRequest": "Report & request",
   "nav.logs": "Logs",
   "nav.apiKeys": "API keys",
+  "nav.webhooks": "Webhooks",
   "nav.landingPage": "Landing page",
+  "nav.preferences": "Sending preferences",
   "nav.signOut": "Sign out",
   "nav.signingOut": "Signing out…",
   "topbar.live": "Live",
@@ -305,6 +325,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "auth.haveAccount": "Already have an account?",
   "auth.signupTitle": "Create your account",
   "auth.continueWithGoogle": "Continue with Google",
+  "auth.continueWithMicrosoft": "Continue with Microsoft",
   "auth.or": "or",
   "auth.verifyTitle": "Verify your email",
   "auth.verifyHelp": "We sent a 6-digit code to {email}. It expires in 10 minutes.",
@@ -322,3 +343,21 @@ export function translate(dict: Record<string, string>, key: string, vars?: Reco
   const raw = dict[key] || BASE_TRANSLATIONS[key] || key;
   return vars ? raw.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`) : raw;
 }
+
+// ---------------------------------------------------------------------------
+// Two-factor authentication
+// ---------------------------------------------------------------------------
+
+export type TwoFactorPolicy = "optional" | "superadmin" | "admins";
+
+/** Whether a role must have two-factor authentication under the platform policy. */
+export function twoFactorRequired(role: string, policy: string | null | undefined): boolean {
+  if (policy === "superadmin") return role === "superadmin";
+  if (policy === "admins") return role === "superadmin" || role === "admin";
+  return false;
+}
+
+export const twoFactorCodeSchema = z.object({
+  /** 6-digit authenticator code, or a recovery code (xxxxx-xxxxx). */
+  code: z.string().trim().min(6).max(20),
+});

@@ -37,7 +37,7 @@ export const SETTING_CARDS: SettingCard[] = [
   { slug: "notification", title: "Notification setting", description: "Platform SMTP server and the global email template for system emails.", icon: Bell },
   { slug: "seo", title: "SEO configuration", description: "Meta title, description, keywords and social sharing image.", icon: Globe2 },
   { slug: "frontend", title: "Manage frontend", description: "Headline, sub-headline and highlights on the sign-in and sign-up pages.", icon: LayoutTemplate },
-  { slug: "social-login", title: "Social login setting", description: "Let people sign in with their Google account.", icon: UserCircle },
+  { slug: "social-login", title: "Social login setting", description: "Let people sign in with Google or Microsoft.", icon: UserCircle },
   { slug: "language", title: "Language", description: "Add languages and translate the interface.", icon: Languages },
   { slug: "cron", title: "Cron job setting", description: "See scheduled jobs, their last runs, and run them on demand.", icon: Clock },
   { slug: "policy-pages", title: "Policy pages", description: "Terms, privacy and other legal pages shown to visitors.", icon: ShieldCheck },

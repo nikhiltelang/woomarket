@@ -16,6 +16,14 @@ import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Spinner, StatCard, StatusBadge } from "@/components/ui/display";
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
+import { rewriteTextUrls, SHORT_CODE_LENGTH } from "@shared/tracking";
+import type { Delivery } from "@shared/sending";
+import { DEFAULT_DELIVERY, DeliveryOptions } from "@/components/delivery-options";
+import { AbTestFields, AbTestResults, DEFAULT_AB, type AbCommon } from "@/components/ab-test";
+
+type SmsAb = AbCommon & { messageB: string };
+const DEFAULT_SMS_AB: SmsAb = { ...DEFAULT_AB, metric: "click", messageB: "" };
+import { DEFAULT_UTM, LinkStats, TrackingOptions, type TrackingValue } from "@/components/tracking-options";
 import { AudiencePicker, insertAtCursor, MergeTagButtons, type AudienceValue } from "@/components/marketing";
 
 type Campaign = Omit<SmsCampaign, "csvData"> & { csvCount: number };
@@ -73,21 +81,29 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
   const [audience, setAudience] = useState<AudienceValue<CsvRow>>({ targetAudience: "all_contacts", targetGroupId: "", csvData: [] });
   const [when, setWhen] = useState<"now" | "later" | "draft">("now");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [tracking, setTracking] = useState<TrackingValue>({ trackClicks: false, utm: { ...DEFAULT_UTM } });
+  const [delivery, setDelivery] = useState<Delivery>({ ...DEFAULT_DELIVERY });
+  const [ab, setAb] = useState<SmsAb>({ ...DEFAULT_SMS_AB });
   const [testTo, setTestTo] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setName(editing?.name ?? "");
     setMessage(editing?.message ?? "");
-    setAudience({ targetAudience: (editing?.targetAudience as AudienceValue<CsvRow>["targetAudience"]) ?? "all_contacts", targetGroupId: editing?.targetGroupId ?? "", csvData: [] });
+    setAudience({ targetAudience: (editing?.targetAudience as AudienceValue<CsvRow>["targetAudience"]) ?? "all_contacts", targetGroupId: editing?.targetGroupId ?? "", targetSegmentId: editing?.targetSegmentId ?? "", csvData: [] });
     setWhen(editing ? (editing.status === "scheduled" ? "later" : "draft") : "now");
     setScheduledAt(editing?.scheduledAt ? new Date(new Date(editing.scheduledAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "");
+    setTracking({ trackClicks: editing?.trackClicks ?? false, utm: { ...DEFAULT_UTM, ...(editing?.utm ?? {}) } });
+    setDelivery({ ...DEFAULT_DELIVERY, ...((editing?.delivery as Delivery | null) ?? {}) });
+    setAb({ ...DEFAULT_SMS_AB, ...((editing?.abTest as Partial<SmsAb> | null) ?? {}) });
   }, [open, editing]);
 
-  const countParams = audience.targetAudience === "csv" ? null : { channelId: activeChannel!.id, targetAudience: audience.targetAudience, targetGroupId: audience.targetGroupId || undefined };
-  const count = useQuery<{ count: number }>({ queryKey: ["/api/sms-marketing/audience", countParams ?? {}], enabled: open && !!countParams && (audience.targetAudience !== "group" || !!audience.targetGroupId) });
+  const countParams = audience.targetAudience === "csv" ? null : { channelId: activeChannel!.id, targetAudience: audience.targetAudience, targetGroupId: audience.targetGroupId || undefined, targetSegmentId: audience.targetSegmentId || undefined };
+  const count = useQuery<{ count: number }>({ queryKey: ["/api/sms-marketing/audience", countParams ?? {}], enabled: open && !!countParams && (audience.targetAudience !== "group" || !!audience.targetGroupId) && (audience.targetAudience !== "segment" || !!audience.targetSegmentId) });
   const recipients = audience.targetAudience === "csv" ? audience.csvData.length || editing?.csvCount || 0 : count.data?.count ?? 0;
-  const segments = calculateSegments(message).segments;
+  // Tracked links are replaced by short links before sending; count with their length.
+  const sendText = tracking.trackClicks ? rewriteTextUrls(message, () => `${window.location.origin}/s/${"x".repeat(SHORT_CODE_LENGTH)}`) : message;
+  const segments = calculateSegments(sendText).segments;
 
   const save = useMutation({
     mutationFn: async () => {
@@ -97,8 +113,13 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
         message,
         targetAudience: audience.targetAudience,
         targetGroupId: audience.targetGroupId || null,
+        targetSegmentId: audience.targetSegmentId || null,
         csvData: audience.csvData,
         scheduledAt: when === "later" && scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        trackClicks: tracking.trackClicks,
+        utm: tracking.utm,
+        delivery,
+        abTest: ab.enabled ? ab : null,
       };
       const res = editing
         ? await apiRequest<{ data: SmsCampaign }>("PUT", `/api/sms-marketing/campaigns/${editing.id}`, body)
@@ -122,7 +143,7 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
     onError: (err) => toast({ title: "Test failed", description: (err as Error).message, variant: "error" }),
   });
 
-  const audienceOk = audience.targetAudience === "all_contacts" || (audience.targetAudience === "group" ? !!audience.targetGroupId : recipients > 0);
+  const audienceOk = audience.targetAudience === "all_contacts" || (audience.targetAudience === "group" ? !!audience.targetGroupId : audience.targetAudience === "segment" ? !!audience.targetSegmentId && recipients > 0 : recipients > 0);
   const valid = name.trim() && message.trim() && audienceOk && (when !== "later" || scheduledAt);
   const provider = gateway.data?.data?.provider ?? "simulator";
 
@@ -162,7 +183,7 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
           >
             <Textarea id="sms-msg" ref={ref} rows={5} maxLength={1600} value={message} onChange={(e) => setMessage(e.target.value)} />
           </Field>
-          <SegmentMeter text={message} />
+          <SegmentMeter text={sendText} />
           {!!templates.data?.data.length && (
             <div className="flex flex-wrap gap-1.5">
               <span className="text-xs text-fg-muted">Templates:</span>
@@ -194,6 +215,15 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
             <Field label="Send at" htmlFor="sms-at" hint="Your local time">
               <Input id="sms-at" type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
             </Field>
+          )}
+          {when !== "draft" && <DeliveryOptions channel="sms" idPrefix="sms" value={delivery} onChange={setDelivery} />}
+          <TrackingOptions channel="sms" value={tracking} onChange={setTracking} campaignName={name} />
+          {when !== "draft" && (
+            <AbTestFields value={ab} onChange={(v) => { setAb(v); if (v.enabled && !tracking.trackClicks) setTracking({ ...tracking, trackClicks: true }); }} metrics={["click"]} audience={recipients}>
+              <Field label="Variant B message" htmlFor="sms-msg-b" hint="Winner by click rate, so include a link. Turning the test on turns link tracking on.">
+                <Textarea id="sms-msg-b" rows={3} value={ab.messageB} maxLength={1600} onChange={(e) => setAb({ ...ab, messageB: e.target.value })} placeholder={message} />
+              </Field>
+            </AbTestFields>
           )}
           <div className="flex flex-wrap gap-2 rounded-md border border-border p-3">
             <Input className="max-w-56 flex-1" placeholder="+14155550123" value={testTo} onChange={(e) => setTestTo(e.target.value)} aria-label="Send a test SMS to" />
@@ -240,8 +270,16 @@ function CampaignDetail({ campaign, onClose }: { campaign: Campaign | null; onCl
           <StatCard label="Recipients" value={formatNumber(d.totalRecipients)} />
           <StatCard label="Sent" value={formatNumber(d.sentCount)} />
           <StatCard label="Delivered" value={formatNumber(d.deliveredCount)} />
-          <StatCard label="Credits" value={formatNumber(d.estimatedCredits)} />
+          {d.trackClicks ? (
+            <StatCard label="Clicked" value={formatNumber(d.clickedCount)} hint={`${d.deliveredCount ? Math.round(((d.clickedCount ?? 0) / d.deliveredCount) * 1000) / 10 : 0}% click rate · ${formatNumber(d.estimatedCredits)} credits`} />
+          ) : (
+            <StatCard label="Credits" value={formatNumber(d.estimatedCredits)} />
+          )}
         </div>
+        {(d.abTest as { enabled?: boolean } | null)?.enabled && (
+          <AbTestResults basePath="/api/sms-marketing/campaigns" campaignId={d.id} labels={{ A: d.message, B: (d.abTest as { messageB?: string }).messageB ?? "" }} />
+        )}
+        {d.trackClicks && d.status !== "draft" && d.status !== "scheduled" && <LinkStats type="sms" campaignId={d.id} delivered={d.deliveredCount ?? 0} />}
         <Card>
           <CardHeader title="Recipients" />
           <Table>

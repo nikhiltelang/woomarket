@@ -11,6 +11,8 @@ campaignRoutes.post("/", requirePermission("campaigns:create"), requireChannelAc
 campaignRoutes.get("/:id", view, h(c.getCampaign));
 campaignRoutes.get("/:id/analytics", view, h(c.analytics));
 campaignRoutes.get("/:id/recipients", view, h(c.recipients));
+campaignRoutes.get("/:id/ab", view, h(c.abTest));
+campaignRoutes.post("/:id/ab/decide", requirePermission("campaigns:send"), h(c.abDecide));
 campaignRoutes.post("/:id/start", requirePermission("campaigns:send"), h(c.start));
 campaignRoutes.patch("/:id/status", requirePermission("campaigns:edit"), h(c.updateStatus));
 campaignRoutes.delete("/:id", requirePermission("campaigns:delete"), h(c.remove));

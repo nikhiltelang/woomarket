@@ -103,6 +103,8 @@ export const users = mysqlTable(
     mercadopagoCustomerId: varchar("mercadopago_customer_id", { length: 255 }),
     /** Assigned platform access level (platform_access_levels.level_number); NULL = no level limits. */
     accessLevel: int("access_level"),
+    /** Set while two-factor authentication is on (secret in user_two_factor). */
+    twoFactorEnabledAt: ts("two_factor_enabled_at"),
   },
   (t) => [index("users_created_by_idx").on(t.createdBy), index("users_role_idx").on(t.role)],
 );
@@ -198,6 +200,16 @@ export const webhookDedup = mysqlTable("webhook_dedup", {
 // ---------------------------------------------------------------------------
 
 export type ContactFields = Record<string, string>;
+/** A/B test settings plus progress (see shared/ab-test.ts). */
+export type AbTestState = Record<string, unknown> & { enabled?: boolean; phase?: string; winner?: string | null };
+/** UTM parameters appended to tracked links (blank values are skipped). */
+export interface UtmSettings {
+  enabled: boolean;
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  content?: string;
+}
 
 export const contacts = mysqlTable(
   "contacts",
@@ -296,6 +308,8 @@ export const campaigns = mysqlTable(
     variableMapping: jsonObject<Record<string, string>>("variable_mapping"),
     contactGroups: jsonArray<string>("contact_groups"),
     audienceType: text("audience_type").$defaultFn(() => "all"),
+    /** audienceType "segment" */
+    segmentId: char("segment_id", { length: 36 }),
     platform: text("platform"),
     csvData: jsonArray<Record<string, string>>("csv_data"),
     apiKey: varchar("api_key", { length: 255 }),
@@ -310,6 +324,9 @@ export const campaigns = mysqlTable(
     failedCount: int("failed_count").default(0),
     completedAt: ts("completed_at"),
     populationStartedAt: ts("population_started_at"),
+    /** When each recipient gets it: { mode: "immediate" | "local_time" | "best_time", localTime? } */
+    delivery: json("delivery").$type<{ mode: string; localTime?: string; ignoreQuietHours?: boolean }>(),
+    abTest: json("ab_test").$type<AbTestState>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -443,6 +460,8 @@ export const campaignRecipients = mysqlTable(
     errorCode: varchar("error_code", { length: 255 }),
     errorMessage: text("error_message"),
     retryCount: int("retry_count").default(0),
+    /** A/B test variant this recipient got ("A" / "B"); null without a test. */
+    variant: varchar("variant", { length: 1 }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -598,8 +617,10 @@ export const emailTemplates = mysqlTable("email_templates", {
   category: text("category").$defaultFn(() => "promotional"),
   subject: text("subject"),
   previewText: text("preview_text"),
-  contentHtml: text("content_html").notNull(),
-  contentText: text("content_text"),
+  contentHtml: mediumtext("content_html").notNull(),
+  contentText: mediumtext("content_text"),
+  /** Drag-and-drop design (shared/email-design.ts); contentHtml is rendered from it. */
+  design: json("design").$type<Record<string, unknown>>(),
   isSystem: boolean("is_system").default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -620,12 +641,15 @@ export const emailCampaigns = mysqlTable(
     senderName: text("sender_name").$defaultFn(() => "Cortesys Marketing"),
     senderEmail: text("sender_email"),
     replyTo: text("reply_to"),
-    contentHtml: text("content_html").notNull(),
-    contentText: text("content_text"),
+    contentHtml: mediumtext("content_html").notNull(),
+    contentText: mediumtext("content_text"),
+    /** Drag-and-drop design (shared/email-design.ts); contentHtml is rendered from it. */
+    design: json("design").$type<Record<string, unknown>>(),
     templateId: varchar("template_id", { length: 255 }),
     targetAudience: text("target_audience").$defaultFn(() => "all_contacts"),
     targetGroupId: varchar("target_group_id", { length: 255 }),
     targetGroupName: text("target_group_name"),
+    targetSegmentId: char("target_segment_id", { length: 36 }),
     csvData: jsonArray<{ email: string; name?: string; contactId?: string }>("csv_data"),
     status: varchar("status", { length: 255 }).default("draft"),
     scheduledAt: ts("scheduled_at"),
@@ -637,6 +661,11 @@ export const emailCampaigns = mysqlTable(
     clickedCount: int("clicked_count").default(0),
     failedCount: int("failed_count").default(0),
     errorMessage: text("error_message"),
+    /** Rewrite links through the click tracker. */
+    trackClicks: boolean("track_clicks").notNull().default(true),
+    utm: json("utm").$type<UtmSettings>(),
+    delivery: json("delivery").$type<{ mode: string; localTime?: string; ignoreQuietHours?: boolean }>(),
+    abTest: json("ab_test").$type<AbTestState>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -657,6 +686,10 @@ export const emailCampaignRecipients = mysqlTable(
     sentAt: ts("sent_at"),
     deliveredAt: ts("delivered_at"),
     openedAt: ts("opened_at"),
+    clickedAt: ts("clicked_at"),
+    /** Not sent before this time (local-time / best-time delivery, quiet hours). */
+    sendAfter: ts("send_after"),
+    variant: varchar("variant", { length: 1 }),
     errorMessage: text("error_message"),
     /** Provider message id (SES MessageId), used to match bounce and complaint notifications. */
     messageId: varchar("message_id", { length: 255 }),
@@ -718,6 +751,7 @@ export const smsCampaigns = mysqlTable(
     targetAudience: text("target_audience").$defaultFn(() => "all_contacts"),
     targetGroupId: varchar("target_group_id", { length: 255 }),
     targetGroupName: text("target_group_name"),
+    targetSegmentId: char("target_segment_id", { length: 36 }),
     csvData: jsonArray<{ phone: string; name?: string; contactId?: string }>("csv_data"),
     status: varchar("status", { length: 255 }).default("draft"),
     scheduledAt: ts("scheduled_at"),
@@ -728,6 +762,12 @@ export const smsCampaigns = mysqlTable(
     failedCount: int("failed_count").default(0),
     smsSegmentsPerRecipient: int("sms_segments_per_recipient").default(1),
     estimatedCredits: int("estimated_credits").default(0),
+    clickedCount: int("clicked_count").default(0),
+    /** Replace links with short tracked links (adds characters, so off by default). */
+    trackClicks: boolean("track_clicks").notNull().default(false),
+    utm: json("utm").$type<UtmSettings>(),
+    delivery: json("delivery").$type<{ mode: string; localTime?: string; ignoreQuietHours?: boolean }>(),
+    abTest: json("ab_test").$type<AbTestState>(),
     errorMessage: text("error_message"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -749,6 +789,10 @@ export const smsCampaignRecipients = mysqlTable(
     status: varchar("status", { length: 255 }).default("pending"),
     sentAt: ts("sent_at"),
     deliveredAt: ts("delivered_at"),
+    clickedAt: ts("clicked_at"),
+    /** Not sent before this time (local-time / best-time delivery, quiet hours). */
+    sendAfter: ts("send_after"),
+    variant: varchar("variant", { length: 1 }),
     messageId: text("message_id"),
     errorMessage: text("error_message"),
     createdAt: createdAt(),
@@ -797,6 +841,8 @@ export interface RequestLogSettings {
 
 export interface ExtensionSettings {
   googleLogin?: { enabled: boolean; clientId: string; clientSecret?: string };
+  /** tenant: "common" | "organizations" | "consumers" | a directory id or domain */
+  microsoftLogin?: { enabled: boolean; clientId: string; clientSecret?: string; tenant: string };
 }
 
 export const systemConfigurations = mysqlTable("system_configurations", {
@@ -818,6 +864,8 @@ export const systemConfigurations = mysqlTable("system_configurations", {
   forceSecurePassword: boolean("force_secure_password").default(true),
   kycVerification: boolean("kyc_verification").default(false),
   emailVerification: boolean("email_verification").default(false),
+  /** "optional" | "superadmin" | "admins" (admins and the superadmin) — who must use 2FA. */
+  twoFactorPolicy: varchar("two_factor_policy", { length: 20 }).default("optional"),
   emailNotification: boolean("email_notification").default(true),
   mobileVerification: boolean("mobile_verification").default(false),
   smsNotification: boolean("sms_notification").default(true),
@@ -1144,6 +1192,199 @@ export const apiUsedSignatures = mysqlTable(
   (t) => [index("api_used_signatures_expires_idx").on(t.expiresAt)],
 );
 
+// ---------------------------------------------------------------------------
+// Click tracking (email and SMS campaigns)
+// ---------------------------------------------------------------------------
+
+export const trackedLinks = mysqlTable(
+  "tracked_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** "email" | "sms" */
+    campaignType: varchar("campaign_type", { length: 10 }).notNull(),
+    campaignId: char("campaign_id", { length: 36 }).notNull(),
+    /** Link as written in the message (may contain merge tags). */
+    originalUrl: text("original_url").notNull(),
+    /** Destination with UTM parameters applied (merge tags filled at click time). */
+    url: text("url").notNull(),
+    position: int("position").notNull(),
+    clicks: int("clicks").notNull().default(0),
+    uniqueClicks: int("unique_clicks").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("tracked_links_campaign_idx").on(t.campaignType, t.campaignId)],
+);
+
+export const linkClicks = mysqlTable(
+  "link_clicks",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    linkId: int("link_id")
+      .notNull()
+      .references(() => trackedLinks.id, { onDelete: "cascade" }),
+    recipientId: char("recipient_id", { length: 36 }).notNull(),
+    contactId: varchar("contact_id", { length: 36 }),
+    ip: varchar("ip", { length: 64 }),
+    userAgent: varchar("user_agent", { length: 300 }),
+    clickedAt: createdAt(),
+  },
+  (t) => [index("link_clicks_link_idx").on(t.linkId), index("link_clicks_recipient_idx").on(t.recipientId), index("link_clicks_contact_idx").on(t.contactId)],
+);
+
+/** Short per-recipient codes for links in SMS (/s/<code>). */
+export const shortLinks = mysqlTable("short_links", {
+  code: varchar("code", { length: 12 }).primaryKey(),
+  linkId: int("link_id")
+    .notNull()
+    .references(() => trackedLinks.id, { onDelete: "cascade" }),
+  recipientId: char("recipient_id", { length: 36 }).notNull(),
+  createdAt: createdAt(),
+});
+
+// ---------------------------------------------------------------------------
+// Per-tenant settings
+// ---------------------------------------------------------------------------
+
+export const tenantSettings = mysqlTable("tenant_settings", {
+  /** Tenant admin id. */
+  userId: char("user_id", { length: 36 })
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Time zone, quiet hours and best-time default (see shared/sending.ts). */
+  sending: json("sending").$type<Record<string, unknown>>(),
+  updatedAt: updatedAt(),
+});
+
+// ---------------------------------------------------------------------------
+// Outgoing webhooks
+// ---------------------------------------------------------------------------
+
+export const webhookEndpoints = mysqlTable(
+  "webhook_endpoints",
+  {
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    url: varchar("url", { length: 2000 }).notNull(),
+    description: varchar("description", { length: 200 }),
+    /** Event names, or ["*"] for all. */
+    events: json("events").$type<string[]>().notNull(),
+    /** Encrypted signing secret. */
+    secret: text("secret").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    /** "dashboard" | "zapier" | "make" | "api" */
+    source: varchar("source", { length: 20 }).notNull().default("dashboard"),
+    /** Access key that created a REST-hook subscription (Zapier/Make). */
+    apiKeyId: char("api_key_id", { length: 36 }),
+    consecutiveFailures: int("consecutive_failures").notNull().default(0),
+    lastSuccessAt: ts("last_success_at"),
+    lastFailureAt: ts("last_failure_at"),
+    disabledReason: varchar("disabled_reason", { length: 255 }),
+    createdBy: char("created_by", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("webhook_endpoints_user_idx").on(t.userId)],
+);
+export type WebhookEndpoint = InferSelectModel<typeof webhookEndpoints>;
+
+export const webhookDeliveries = mysqlTable(
+  "webhook_deliveries",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    endpointId: char("endpoint_id", { length: 36 })
+      .notNull()
+      .references(() => webhookEndpoints.id, { onDelete: "cascade" }),
+    /** Envelope id, sent as X-WM-Delivery; the same across retries. */
+    eventId: char("event_id", { length: 36 }).notNull(),
+    event: varchar("event", { length: 50 }).notNull(),
+    payload: json("payload").$type<Record<string, unknown>>().notNull(),
+    /** pending | sending | succeeded | failed */
+    status: varchar("status", { length: 12 }).notNull().default("pending"),
+    attempts: int("attempts").notNull().default(0),
+    nextAttemptAt: ts("next_attempt_at"),
+    lockedUntil: ts("locked_until"),
+    responseStatus: int("response_status"),
+    responseBody: varchar("response_body", { length: 2000 }),
+    error: varchar("error", { length: 500 }),
+    durationMs: int("duration_ms"),
+    deliveredAt: ts("delivered_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("webhook_deliveries_due_idx").on(t.status, t.nextAttemptAt), index("webhook_deliveries_endpoint_idx").on(t.endpointId, t.createdAt)],
+);
+export type WebhookDelivery = InferSelectModel<typeof webhookDeliveries>;
+
+// ---------------------------------------------------------------------------
+// Two-factor authentication (TOTP)
+// ---------------------------------------------------------------------------
+
+export const userTwoFactor = mysqlTable("user_two_factor", {
+  userId: char("user_id", { length: 36 })
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Encrypted base32 secret; set once setup is confirmed. */
+  secret: text("secret"),
+  /** Encrypted secret waiting for the first code during setup. */
+  pendingSecret: text("pending_secret"),
+  /** SHA-256 hashes of unused recovery codes. */
+  recoveryCodes: json("recovery_codes").$type<string[]>(),
+  /** Last accepted 30-second step, so a code can't be used twice. */
+  lastUsedStep: bigint("last_used_step", { mode: "number" }),
+  updatedAt: updatedAt(),
+});
+export type UserTwoFactor = InferSelectModel<typeof userTwoFactor>;
+
+// ---------------------------------------------------------------------------
+// Single sign-on identities (Google, Microsoft)
+// ---------------------------------------------------------------------------
+
+export const userIdentities = mysqlTable(
+  "user_identities",
+  {
+    id: id(),
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** "google" | "microsoft" */
+    provider: varchar("provider", { length: 20 }).notNull(),
+    /** The provider's stable account id (Google `sub`, Microsoft `tid:oid`). */
+    subject: varchar("subject", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }),
+    lastLoginAt: ts("last_login_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("user_identities_provider_subject").on(t.provider, t.subject), index("user_identities_user_idx").on(t.userId)],
+);
+export type UserIdentity = InferSelectModel<typeof userIdentities>;
+
+// ---------------------------------------------------------------------------
+// Dynamic segments
+// ---------------------------------------------------------------------------
+
+export const segments = mysqlTable(
+  "segments",
+  {
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    description: text("description"),
+    /** { match: "all" | "any", conditions: [...] } (see shared/segments.ts) */
+    rules: json("rules").$type<Record<string, unknown>>().notNull(),
+    lastCount: int("last_count"),
+    lastCountedAt: ts("last_counted_at"),
+    createdBy: char("created_by", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("segments_user_idx").on(t.userId)],
+);
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -1190,6 +1431,15 @@ export const MANAGED_TABLES = [
   "api_idempotency_keys",
   "api_used_signatures",
   "email_suppressions",
+  "tracked_links",
+  "link_clicks",
+  "short_links",
+  "tenant_settings",
+  "segments",
+  "user_identities",
+  "user_two_factor",
+  "webhook_endpoints",
+  "webhook_deliveries",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -1233,3 +1483,5 @@ export type SupportRequest = InferSelectModel<typeof supportRequests>;
 export type RequestLog = InferSelectModel<typeof requestLogs>;
 export type ApiKey = InferSelectModel<typeof apiKeys>;
 export type EmailSuppression = InferSelectModel<typeof emailSuppressions>;
+export type TrackedLink = InferSelectModel<typeof trackedLinks>;
+export type Segment = InferSelectModel<typeof segments>;

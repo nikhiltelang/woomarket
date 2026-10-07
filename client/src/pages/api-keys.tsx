@@ -29,7 +29,7 @@ interface KeyRow {
 }
 const KEY = "/api/api-keys";
 
-function CopyText({ text, label }: { text: string; label: string }) {
+export function CopyText({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
   return (
     <Button
@@ -48,7 +48,7 @@ function CopyText({ text, label }: { text: string; label: string }) {
   );
 }
 
-function Code({ children, copy }: { children: string; copy?: boolean }) {
+export function Code({ children, copy }: { children: string; copy?: boolean }) {
   return (
     <div className="relative">
       <pre className="overflow-x-auto rounded-md border border-border bg-subtle p-3 pr-12 font-mono text-xs leading-relaxed">{children}</pre>

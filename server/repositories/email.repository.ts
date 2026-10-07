@@ -231,7 +231,7 @@ export const emailCampaignsRepository = {
     const [{ n }] = await db
       .select({ n: count() })
       .from(emailCampaignRecipients)
-      .where(and(eq(emailCampaignRecipients.campaignId, campaignId), inArray(emailCampaignRecipients.status, ["pending", "processing"])));
+      .where(and(eq(emailCampaignRecipients.campaignId, campaignId), inArray(emailCampaignRecipients.status, ["pending", "processing", "held"])));
     return n;
   },
 
@@ -239,7 +239,7 @@ export const emailCampaignsRepository = {
     await db
       .update(emailCampaignRecipients)
       .set({ status: to })
-      .where(and(eq(emailCampaignRecipients.campaignId, campaignId), eq(emailCampaignRecipients.status, "pending")));
+      .where(and(eq(emailCampaignRecipients.campaignId, campaignId), inArray(emailCampaignRecipients.status, ["pending", "held"])));
   },
 
   /** Claims pending recipients of campaigns that are currently sending. */
@@ -251,6 +251,7 @@ export const emailCampaignsRepository = {
         .where(
           and(
             eq(emailCampaignRecipients.status, "pending"),
+            or(isNull(emailCampaignRecipients.sendAfter), lte(emailCampaignRecipients.sendAfter, sql`CURRENT_TIMESTAMP(3)`)),
             inArray(emailCampaignRecipients.campaignId, tx.select({ id: emailCampaigns.id }).from(emailCampaigns).where(eq(emailCampaigns.status, "sending"))),
           ),
         )

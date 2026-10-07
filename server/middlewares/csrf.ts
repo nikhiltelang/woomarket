@@ -9,6 +9,8 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 /** Paths that never carry a browser session or have their own authentication. */
 const EXEMPT_PREFIXES = [
   "/api/auth/login",
+  // Second half of sign-in: only completes a sign-in already pending in this session.
+  "/api/auth/2fa/verify",
   "/api/auth/signup",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",

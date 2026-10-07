@@ -18,6 +18,7 @@ export interface PublicUser {
   isEmailVerified: boolean;
   isMobileVerified: boolean;
   accessLevel: number | null;
+  twoFactorEnabled: boolean;
 }
 
 export interface Paginated<T> {

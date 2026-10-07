@@ -1,13 +1,17 @@
-import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
+import { usePlatform } from "@/contexts/platform";
+import { TwoFactorCard } from "@/components/two-factor";
+import { SSO_META, ssoErrorMessage, type SsoProvider } from "./login";
 import { useAuth } from "@/contexts/auth";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, queryClient } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import { PageContainer } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
 import { Badge, Card, CardHeader, PageHeader } from "@/components/ui/display";
-import { useToast } from "@/components/ui/overlay";
+import { useConfirm, useToast } from "@/components/ui/overlay";
 
 export default function AccountPage() {
   const { user, refresh } = useAuth();
@@ -94,7 +98,89 @@ export default function AccountPage() {
             </Button>
           </form>
         </Card>
+        <TwoFactorCard />
+        <ConnectedAccounts />
       </div>
     </PageContainer>
+  );
+}
+
+interface Identity {
+  provider: SsoProvider;
+  email: string | null;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+/** Google / Microsoft accounts the user can sign in with. */
+function ConnectedAccounts() {
+  const { config } = usePlatform();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const search = new URLSearchParams(useSearch());
+  const [, navigate] = useLocation();
+  const { data } = useQuery<{ data: Identity[] }>({ queryKey: ["/api/auth/identities"] });
+
+  // Result of a "Connect" round trip (shown once, even when effects run twice in development).
+  const shown = useRef(false);
+  useEffect(() => {
+    if (shown.current) return;
+    shown.current = true;
+    const linked = search.get("sso_linked") as SsoProvider | null;
+    const error = ssoErrorMessage(search.get("sso_error"));
+    if (linked && SSO_META[linked]) toast({ title: `${SSO_META[linked].label} connected`, description: "You can now sign in with it.", variant: "success" });
+    if (error) toast({ title: "Could not connect", description: error, variant: "error" });
+    if (linked || error) navigate("/account", { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const unlink = useMutation({
+    mutationFn: (p: SsoProvider) => apiRequest("DELETE", `/api/auth/identities/${p}`),
+    onSuccess: () => {
+      toast({ title: "Disconnected", variant: "success" });
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/identities"] });
+    },
+    onError: (err) => toast({ title: "Could not disconnect", description: (err as Error).message, variant: "error" }),
+  });
+
+  const providers = (["google", "microsoft"] as const).filter((p) => (p === "google" ? config?.googleLogin : config?.microsoftLogin) || data?.data.some((i) => i.provider === p));
+  if (!providers.length) return null;
+  return (
+    <Card>
+      <CardHeader title="Connected sign-in" description="Sign in with these accounts instead of your password." />
+      <ul className="divide-y divide-border">
+        {providers.map((p) => {
+          const identity = data?.data.find((i) => i.provider === p);
+          const available = p === "google" ? config?.googleLogin : config?.microsoftLogin;
+          return (
+            <li key={p} className="flex flex-wrap items-center gap-3 px-5 py-4">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border">{SSO_META[p].icon}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{SSO_META[p].label}</p>
+                <p className="truncate text-xs text-fg-muted">
+                  {identity ? `${identity.email ?? "Connected"} · ${identity.lastLoginAt ? `last used ${formatDate(identity.lastLoginAt)}` : `connected ${formatDate(identity.createdAt)}`}` : "Not connected"}
+                </p>
+              </div>
+              {identity ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={unlink.isPending && unlink.variables === p}
+                  onClick={async () => {
+                    if (await confirm({ title: `Disconnect ${SSO_META[p].label}?`, description: "You'll need your password (or another connected account) to sign in. If you never set a password, use “Forgot password” first.", confirmText: "Disconnect", destructive: true })) unlink.mutate(p);
+                  }}
+                >
+                  Disconnect
+                </Button>
+              ) : available ? (
+                <a href={`/api/auth/${p}?link=1`} className="inline-flex h-8 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-subtle">
+                  Connect
+                </a>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }

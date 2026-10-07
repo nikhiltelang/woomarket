@@ -1,16 +1,20 @@
 import type { Request, Response } from "express";
+import { abOverview, decideTest } from "../services/ab-test.service";
 import { z } from "zod";
 import { emailCampaignSchema, emailTemplateSchema, marketingStatusSchema, paginationQuery, testEmailSchema } from "@shared/validation";
 import type { EmailCampaign } from "@shared/schema";
 import { paginated, parse, parseBody, parseQuery } from "../lib/http";
 import { conflict, notFound } from "../lib/errors";
 import { emailCampaignsRepository, emailTemplatesRepository } from "../repositories/email.repository";
+import { renderDesign, type EmailDesign } from "@shared/email-design";
+import { loadSegment } from "../services/segments.service";
 import { groupsRepository } from "../repositories/groups.repository";
 import { activityRepository } from "../repositories/activity.repository";
 import { assertChannelAccess, requireTenantId } from "../middlewares/tenant";
 import { assertWithinPlan } from "../middlewares/subscription";
 import { resolveSmtp, sendEmail, simulatedOutbox } from "../services/email/mailer";
 import { renderEmail } from "../services/email/render";
+import { deleteCampaignLinks, linkStats } from "../services/tracking.service";
 import {
   changeEmailCampaignStatus,
   recordEmailOpen,
@@ -26,6 +30,12 @@ async function loadCampaign(req: Request): Promise<EmailCampaign> {
   return c;
 }
 
+/** Designed emails: the HTML is always rendered here from the design, never trusted from the browser. */
+function withDesign(input: { contentHtml: string; contentText?: string | null; subject?: string | null; design?: EmailDesign | null }) {
+  if (!input.design) return { contentHtml: input.contentHtml, contentText: input.contentText ?? null, design: null };
+  return { contentHtml: renderDesign(input.design, { title: input.subject ?? "" }), contentText: null, design: input.design as Record<string, unknown> };
+}
+
 async function campaignValues(req: Request, input: z.infer<typeof emailCampaignSchema>, channelId: string) {
   let targetGroupName: string | null = null;
   if (input.targetAudience === "group") {
@@ -33,6 +43,7 @@ async function campaignValues(req: Request, input: z.infer<typeof emailCampaignS
     if (!group || group.createdBy !== req.user!.tenantId) throw notFound("Group");
     targetGroupName = group.name;
   }
+  if (input.targetAudience === "segment") targetGroupName = (await loadSegment(requireTenantId(req.user), input.targetSegmentId!)).name;
   return {
     channelId,
     name: input.name,
@@ -40,15 +51,19 @@ async function campaignValues(req: Request, input: z.infer<typeof emailCampaignS
     previewText: input.previewText ?? null,
     senderName: input.senderName,
     replyTo: input.replyTo || null,
-    contentHtml: input.contentHtml,
-    contentText: input.contentText ?? null,
+    ...withDesign(input),
     templateId: input.templateId ?? null,
     targetAudience: input.targetAudience,
     targetGroupId: input.targetAudience === "group" ? input.targetGroupId! : null,
+    targetSegmentId: input.targetAudience === "segment" ? input.targetSegmentId! : null,
     targetGroupName,
     csvData: input.targetAudience === "csv" ? input.csvData : [],
     scheduledAt: input.scheduledAt ?? null,
     status: input.scheduledAt ? "scheduled" : "draft",
+    trackClicks: input.trackClicks,
+    utm: input.utm ?? null,
+    delivery: input.delivery ?? null,
+    abTest: input.abTest?.enabled ? input.abTest : null,
   };
 }
 
@@ -92,6 +107,7 @@ export async function deleteCampaign(req: Request, res: Response) {
   const c = await loadCampaign(req);
   if (["sending", "paused"].includes(c.status ?? "")) throw conflict("Cancel the campaign before deleting it", "CAMPAIGN_ACTIVE");
   await emailCampaignsRepository.delete(c.id);
+  await deleteCampaignLinks("email", c.id);
   await activityRepository.record(req, req.user!.id, "email_campaign_deleted", { type: "email_campaign", id: c.id });
   res.json({ success: true });
 }
@@ -128,9 +144,9 @@ export async function recipients(req: Request, res: Response) {
 /** Size of an audience before saving, for the composer. */
 export async function audienceCount(req: Request, res: Response) {
   const tenantId = requireTenantId(req.user);
-  const q = parse(z.object({ channelId: z.string().uuid(), targetAudience: z.enum(["all_contacts", "group"]), targetGroupId: z.string().uuid().optional() }), req.query);
+  const q = parse(z.object({ channelId: z.string().uuid(), targetAudience: z.enum(["all_contacts", "group", "segment"]), targetGroupId: z.string().uuid().optional(), targetSegmentId: z.string().uuid().optional() }), req.query);
   await assertChannelAccess(req.user!, q.channelId);
-  const rows = await resolveEmailAudience({ userId: tenantId, channelId: q.channelId, targetAudience: q.targetAudience, targetGroupId: q.targetGroupId ?? null, csvData: [] } as never);
+  const rows = await resolveEmailAudience({ userId: tenantId, channelId: q.channelId, targetAudience: q.targetAudience, targetGroupId: q.targetGroupId ?? null, targetSegmentId: q.targetSegmentId ?? null, csvData: [] } as never);
   res.json({ count: rows.length });
 }
 
@@ -155,7 +171,7 @@ export async function listTemplates(req: Request, res: Response) {
 export async function createTemplate(req: Request, res: Response) {
   const tenantId = requireTenantId(req.user);
   const input = parseBody(emailTemplateSchema, req);
-  const t = await emailTemplatesRepository.create({ ...input, userId: tenantId, isSystem: false });
+  const t = await emailTemplatesRepository.create({ ...input, ...withDesign(input), userId: tenantId, isSystem: false });
   res.status(201).json({ data: t });
 }
 
@@ -167,7 +183,8 @@ async function ownTemplate(req: Request) {
 
 export async function updateTemplate(req: Request, res: Response) {
   const t = await ownTemplate(req);
-  res.json({ data: await emailTemplatesRepository.update(t.id, parseBody(emailTemplateSchema, req)) });
+  const input = parseBody(emailTemplateSchema, req);
+  res.json({ data: await emailTemplatesRepository.update(t.id, { ...input, ...withDesign(input) }) });
 }
 
 export async function deleteTemplate(req: Request, res: Response) {
@@ -206,4 +223,27 @@ export async function unsubscribe(req: Request, res: Response) {
     return;
   }
   res.type("html").send(page("Unsubscribed", `<h1>You're unsubscribed</h1><p>We won't send further marketing emails to this address.</p>`));
+}
+
+/** GET /api/email-marketing/campaigns/:id/links — clicks per link. */
+export async function campaignLinks(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  res.json({ data: await linkStats("email", c.id) });
+}
+
+const decideBody = z.object({ winner: z.enum(["A", "B"]).optional() });
+
+/** GET …/campaigns/:id/ab — A/B settings, progress and live results. */
+export async function abTest(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  res.json({ data: await abOverview("email", c.id) });
+}
+
+/** POST …/campaigns/:id/ab/decide — pick the winner now (optionally a specific one). */
+export async function abDecide(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  const { winner } = parseBody(decideBody, req);
+  const state = await decideTest("email", c.id, { winner, by: "manual" });
+  await activityRepository.record(req, req.user!.id, "ab_test_decided", { type: `${"email"}_campaign`, id: c.id }, { winner: state.winner });
+  res.json({ data: state });
 }

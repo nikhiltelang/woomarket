@@ -6,6 +6,7 @@ import type { Campaign, CampaignRecipient } from "@shared/schema";
 import type { Paginated } from "@shared/api-types";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { PageContainer } from "@/components/layout/app-layout";
+import { AbTestResults } from "@/components/ab-test";
 import { Card, CardHeader, ErrorState, PageHeader, PageLoader, ProgressBar, StatCard, StatusBadge } from "@/components/ui/display";
 import { Select } from "@/components/ui/form";
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
@@ -55,6 +56,12 @@ export default function CampaignAnalytics({ params }: { params: { campaignId: st
           <StatCard key={f.label} label={f.label} value={formatNumber(f.value)} hint={`${f.rate}% of recipients`} />
         ))}
       </div>
+
+      {(c.abTest as { enabled?: boolean } | null)?.enabled && (
+        <div className="mt-6">
+          <AbTestResults basePath="/api/campaigns" campaignId={c.id} labels={{ A: `Template: ${c.templateName}`, B: (ab) => `Template: ${ab.templateNameB ?? "variant B"}` }} />
+        </div>
+      )}
 
       <Card className="mt-6">
         <CardHeader title="Delivery funnel" description={c.failedCount ? `${formatNumber(c.failedCount)} failed (${rates.failed}%)` : "No failures"} />

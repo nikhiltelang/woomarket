@@ -25,6 +25,7 @@ export function toPublicUser(u: User): PublicUser {
     isEmailVerified: Boolean(u.isEmailVerified),
     isMobileVerified: Boolean(u.isMobileVerified),
     accessLevel: u.accessLevel ?? null,
+    twoFactorEnabled: Boolean(u.twoFactorEnabledAt),
   };
 }
 
@@ -38,6 +39,7 @@ export function toAuthUser(u: User): AuthUser {
     permissions: u.permissions ?? [],
     createdBy: u.createdBy,
     tenantId: role === "admin" ? u.id : role === "team" ? u.createdBy : null,
+    twoFactorEnabled: Boolean(u.twoFactorEnabledAt),
   };
 }
 

@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { abOverview, decideTest } from "../services/ab-test.service";
 import { z } from "zod";
 import { campaignStatusSchema, createCampaignSchema, paginationQuery } from "@shared/validation";
 import type { Campaign } from "@shared/schema";
@@ -87,4 +88,21 @@ export async function recipients(req: Request, res: Response) {
   const q = parseQuery(paginationQuery.extend({ status: z.string().max(20).optional() }), req);
   const { rows, total } = await campaignsRepository.listRecipients(campaign.id, q);
   res.json(paginated(rows, total, q.page, q.limit));
+}
+
+const decideBody = z.object({ winner: z.enum(["A", "B"]).optional() });
+
+/** GET …/campaigns/:id/ab — A/B settings, progress and live results. */
+export async function abTest(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  res.json({ data: await abOverview("whatsapp", c.id) });
+}
+
+/** POST …/campaigns/:id/ab/decide — pick the winner now (optionally a specific one). */
+export async function abDecide(req: Request, res: Response) {
+  const c = await loadCampaign(req);
+  const { winner } = parseBody(decideBody, req);
+  const state = await decideTest("whatsapp", c.id, { winner, by: "manual" });
+  await activityRepository.record(req, req.user!.id, "ab_test_decided", { type: `${"whatsapp"}_campaign`, id: c.id }, { winner: state.winner });
+  res.json({ data: state });
 }

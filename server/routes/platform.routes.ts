@@ -1,13 +1,15 @@
 import { Router } from "express";
 import * as sys from "../controllers/system-config.controller";
 import * as auth from "../controllers/auth.controller";
-import * as google from "../controllers/google-auth.controller";
+import * as sso from "../controllers/sso-auth.controller";
 import { languages, levels, notificationsCtl, policies } from "../controllers/platform.controller";
 import * as coupons from "../controllers/coupons.controller";
 import * as support from "../controllers/support.controller";
 import * as sysinfo from "../controllers/system-info.controller";
 import * as requestLogs from "../controllers/request-logs.controller";
 import * as landing from "../controllers/landing.controller";
+import * as tenantSettings from "../controllers/tenant-settings.controller";
+import { requirePermission } from "../middlewares/auth";
 import { requireAuth, requireRole } from "../middlewares/auth";
 import { authRateLimiter } from "../middlewares/rate-limit";
 import { maintenanceBypass } from "../middlewares/platform";
@@ -24,8 +26,10 @@ platformPublicRoutes.get("/policy-pages/:slug", (req, res, next) => (req.params.
 platformPublicRoutes.get("/languages/enabled", h(languages.enabled));
 platformPublicRoutes.get("/languages/translations/:code", h(languages.translations));
 platformPublicRoutes.get("/maintenance/bypass", h(maintenanceBypass));
-platformPublicRoutes.get("/auth/google", h(google.start));
-platformPublicRoutes.get("/auth/google/callback", h(google.callback));
+for (const provider of ["google", "microsoft"]) {
+  platformPublicRoutes.get(`/auth/${provider}`, h(sso.start));
+  platformPublicRoutes.get(`/auth/${provider}/callback`, h(sso.callback));
+}
 platformPublicRoutes.post("/users/verifyEmail", authRateLimiter, h(auth.verifyEmail));
 platformPublicRoutes.post("/users/resend-verification", authRateLimiter, h(auth.resendVerification));
 
@@ -34,6 +38,8 @@ export const platformRoutes = Router();
 const sa = requireRole("superadmin");
 const tenant = requireRole("admin", "team");
 
+platformRoutes.get("/auth/identities", requireAuth, h(sso.listIdentities));
+platformRoutes.delete("/auth/identities/:provider", requireAuth, h(sso.unlinkIdentity));
 platformRoutes.get("/notifications/users", requireAuth, h(notificationsCtl.mine));
 platformRoutes.get("/notifications/unread-count", requireAuth, h(notificationsCtl.unread));
 platformRoutes.post("/notifications/mark-all", requireAuth, h(notificationsCtl.readAll));
@@ -94,3 +100,6 @@ platformRoutes.get("/superadmin/request-logs/:id(\\d+)", sa, h(requestLogs.get))
 platformRoutes.get("/superadmin/landing-page", sa, h(landing.getAdmin));
 platformRoutes.put("/superadmin/landing-page", sa, h(landing.update));
 platformRoutes.post("/superadmin/landing-page/image", sa, imageUpload.single("image"), h(landing.uploadImage));
+
+platformRoutes.get("/settings/sending", tenant, h(tenantSettings.getSending));
+platformRoutes.put("/settings/sending", requireRole("admin"), requirePermission("settings:edit"), h(tenantSettings.saveSending));

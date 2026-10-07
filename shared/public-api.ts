@@ -49,6 +49,8 @@ const common = {
   name: z.string().trim().min(1).max(255).optional(),
   /** Send later instead of now (ISO 8601). */
   scheduleAt: z.coerce.date().optional(),
+  /** Hold messages that would arrive during the account's quiet hours (off: API sends are often transactional). */
+  respectQuietHours: z.boolean().default(false),
 };
 
 export const apiSendSchema = z

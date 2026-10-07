@@ -1,5 +1,6 @@
 import { renderMergeTags } from "@shared/sms";
 import { publicBaseUrl, signToken } from "../../lib/tokens";
+import { trackEmailLinks, type LinkMap } from "../tracking.service";
 
 export const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -53,8 +54,14 @@ export interface RenderRecipient {
  * hidden preview text, a mandatory unsubscribe link, the open-tracking pixel and
  * RFC 8058 one-click unsubscribe headers.
  */
-export function renderEmail(c: RenderInput, r: RenderRecipient) {
+export function renderEmail(c: RenderInput, r: RenderRecipient, links?: LinkMap) {
   const base = publicBaseUrl();
+  // Click tracking rewrites links in the raw template, so templated URLs ({{email}}) are
+  // filled at click time instead of being baked into the tracked link.
+  if (r.id && links?.size) {
+    const t = trackEmailLinks(c.contentHtml, c.contentText ?? htmlToText(c.contentHtml), links, r.id);
+    c = { ...c, contentHtml: t.html, contentText: t.text };
+  }
   const unsubscribeUrl = r.id ? `${base}/api/email-marketing/unsubscribe/${signToken("unsubscribe", r.id)}` : `${base}/api/email-marketing/unsubscribe/test`;
   const values = { name: r.name ?? "", email: r.email, fields: r.fields };
 

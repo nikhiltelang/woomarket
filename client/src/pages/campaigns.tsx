@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Megaphone, Pause, Play, Plus, Rocket, Trash2, XCircle } from "lucide-react";
-import type { Campaign, Group, Template } from "@shared/schema";
+import type { Campaign, Group, Segment, Template } from "@shared/schema";
 import type { Paginated } from "@shared/api-types";
 import { useChannel } from "@/contexts/channel";
 import { useAuth } from "@/contexts/auth";
@@ -17,6 +17,12 @@ import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 import { TemplatePreview } from "./templates";
 import { useContactFields } from "@/components/contact-fields";
+import { DEFAULT_DELIVERY, DeliveryOptions } from "@/components/delivery-options";
+import { AbTestFields, DEFAULT_AB, type AbCommon } from "@/components/ab-test";
+
+type WaAb = AbCommon & { templateIdB: string | null };
+const DEFAULT_WA_AB: WaAb = { ...DEFAULT_AB, metric: "read", templateIdB: null };
+import type { Delivery } from "@shared/sending";
 import { fieldLabel } from "@shared/contact-fields";
 
 type GroupRow = Group & { contactCount: number };
@@ -45,11 +51,16 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [audienceType, setAudienceType] = useState<"all" | "groups">("all");
+  const [audienceType, setAudienceType] = useState<"all" | "groups" | "segment">("all");
   const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [segmentId, setSegmentId] = useState("");
+  const segments = useQuery<{ data: Segment[] }>({ queryKey: ["/api/segments"], enabled: open && audienceType === "segment" });
+  const segmentSize = useQuery<{ data: { count: number; active: number } }>({ queryKey: [`/api/segments/${segmentId}/contacts`, { channelId, limit: 1 }], enabled: open && audienceType === "segment" && Boolean(segmentId) });
   const [mapping, setMapping] = useState<Record<string, { kind: string; text: string }>>({});
   const [when, setWhen] = useState<"now" | "later">("now");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [delivery, setDelivery] = useState<Delivery>({ ...DEFAULT_DELIVERY });
+  const [ab, setAb] = useState<WaAb>({ ...DEFAULT_WA_AB });
 
   const template = templates.data?.data.find((t) => t.id === templateId);
   const vars = template?.bodyVariables ?? 0;
@@ -60,9 +71,12 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
     setTemplateId("");
     setAudienceType("all");
     setGroupIds([]);
+    setSegmentId("");
     setMapping({});
     setWhen("now");
     setScheduledAt("");
+    setDelivery({ ...DEFAULT_DELIVERY });
+    setAb({ ...DEFAULT_WA_AB });
   };
 
   const create = useMutation({
@@ -80,8 +94,11 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
         templateId,
         audienceType,
         contactGroups: audienceType === "groups" ? groupIds : [],
+        segmentId: audienceType === "segment" ? segmentId : null,
         variableMapping,
         scheduledAt: when === "later" && scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        delivery,
+        abTest: ab.enabled ? ab : null,
       });
       if (when === "now") await apiRequest("POST", `/api/campaigns/${res.data.id}/start`);
       return res.data;
@@ -103,8 +120,9 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const valid =
     name.trim() &&
     template &&
-    (audienceType === "all" || groupIds.length > 0) &&
+    (audienceType === "all" || (audienceType === "groups" ? groupIds.length > 0 : Boolean(segmentId))) &&
     (when === "now" || scheduledAt) &&
+    (!ab.enabled || ab.templateIdB) &&
     Array.from({ length: vars }, (_, i) => mapping[String(i + 1)]).every((m) => !m || m.kind !== "static" || m.text.trim());
 
   const previewParams = Array.from({ length: vars }, (_, i) => {
@@ -180,11 +198,30 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
             </fieldset>
           )}
           <Field label="Audience" htmlFor="cp-aud">
-            <Select id="cp-aud" value={audienceType} onChange={(e) => setAudienceType(e.target.value as "all" | "groups")}>
+            <Select id="cp-aud" value={audienceType} onChange={(e) => setAudienceType(e.target.value as "all" | "groups" | "segment")}>
               <option value="all">All active contacts</option>
               <option value="groups">Specific groups</option>
+              <option value="segment">A segment (saved filter)</option>
             </Select>
           </Field>
+          {audienceType === "segment" && (
+            <Field
+              hint={
+                segments.data && !segments.data.data.length ? (
+                  <>No segments yet. <Link href="/segments" className="text-primary hover:underline">Create one</Link></>
+                ) : segmentSize.data ? (
+                  `${formatNumber(segmentSize.data.data.active)} active contacts match right now. Matched again when the campaign starts.`
+                ) : (
+                  "Matched when the campaign starts, so new contacts who fit are included."
+                )
+              }
+            >
+              <Select value={segmentId} onChange={(e) => setSegmentId(e.target.value)} aria-label="Segment">
+                <option value="">Choose a segment…</option>
+                {segments.data?.data.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </Select>
+            </Field>
+          )}
           {audienceType === "groups" && (
             <div className="flex flex-wrap gap-2">
               {(groups.data?.data ?? []).map((g) => {
@@ -214,6 +251,19 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
             <Field label="Send at" htmlFor="cp-at" hint="Your local time">
               <Input id="cp-at" type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)} />
             </Field>
+          )}
+          <DeliveryOptions channel="whatsapp" idPrefix="cp" value={delivery} onChange={setDelivery} />
+          {template && (
+            <AbTestFields value={ab} onChange={setAb} metrics={["read"]}>
+              <Field label="Variant B template" htmlFor="cp-tpl-b" hint="Uses the same variable values as A, so it needs the same number of variables.">
+                <Select id="cp-tpl-b" value={ab.templateIdB ?? ""} onChange={(e) => setAb({ ...ab, templateIdB: e.target.value || null })}>
+                  <option value="">Choose a template…</option>
+                  {templates.data?.data
+                    .filter((t) => t.id !== template.id && (t.bodyVariables ?? 0) === vars)
+                    .map((t) => <option key={t.id} value={t.id}>{t.name} ({t.language})</option>)}
+                </Select>
+              </Field>
+            </AbTestFields>
           )}
         </div>
         <div>

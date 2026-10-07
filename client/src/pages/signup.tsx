@@ -11,7 +11,7 @@ import { ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/display";
-import { AuthShell, GoogleButton, VerifyEmailStep } from "./login";
+import { AuthShell, SsoButtons, VerifyEmailStep } from "./login";
 
 type SignupForm = z.input<typeof signupSchema>;
 
@@ -65,7 +65,7 @@ export default function SignupPage() {
 
   return (
     <AuthShell title={t("auth.signupTitle")} subtitle="Start on the Free plan — upgrade any time">
-      <GoogleButton />
+      <SsoButtons />
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
         {error && (
           <div role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">

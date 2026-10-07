@@ -10,10 +10,23 @@ import { renderEmail } from "./email/render";
 import { getSmsProvider, SmsProviderError } from "./sms/providers";
 import { completeEmailCampaignIfDone, completeSmsCampaignIfDone } from "./marketing.service";
 import { contactsRepository } from "../repositories/contacts.repository";
+import { linksFor, shortenSmsLinks, type LinkMap } from "./tracking.service";
 
 const log = childLogger("marketing-worker");
 const MAX_ATTEMPTS = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Variant B of an A/B test swaps in its subject, preview text and (if set) content. */
+function emailVariant(c: EmailCampaign, variant: string | null): EmailCampaign {
+  if (variant !== "B" || !c.abTest) return c;
+  const b = c.abTest as { subjectB?: string; previewTextB?: string | null; contentHtmlB?: string | null };
+  return {
+    ...c,
+    subject: b.subjectB || c.subject,
+    previewText: b.previewTextB ?? c.previewText,
+    ...(b.contentHtmlB ? { contentHtml: b.contentHtmlB, contentText: null } : {}),
+  };
+}
 type Fields = Map<string, Record<string, string>>;
 /** Custom fields of the recipients' contacts, for {{field}} merge tags (one query per batch). */
 const fieldsOf = (recipients: { contactId: string | null }[]): Promise<Fields> => contactsRepository.fieldsByIds(recipients.map((r) => r.contactId).filter((x): x is string => Boolean(x)));
@@ -83,8 +96,9 @@ export class MarketingWorker {
         continue;
       }
       const fields = await fieldsOf(recipients);
+      const links = campaign.trackClicks ? await linksFor("email", campaign.id) : undefined;
       for (let i = 0; i < recipients.length; i++) {
-        const halted = await this.sendOneEmail(campaign, smtp, recipients[i], fields);
+        const halted = await this.sendOneEmail(campaign, smtp, recipients[i], fields, links);
         if (halted) {
           await this.haltEmail(campaign, recipients.slice(i + 1), halted);
           break;
@@ -97,8 +111,8 @@ export class MarketingWorker {
   }
 
   /** Returns an error message when the whole campaign must stop (SMTP connection/auth problem). */
-  private async sendOneEmail(c: EmailCampaign, smtp: ResolvedSmtp, r: EmailRecipient, fields: Fields): Promise<string | null> {
-    const rendered = renderEmail(c, { id: r.id, name: r.name, email: r.email, fields: (r.contactId && fields.get(r.contactId)) || {} });
+  private async sendOneEmail(c: EmailCampaign, smtp: ResolvedSmtp, r: EmailRecipient, fields: Fields, links?: LinkMap): Promise<string | null> {
+    const rendered = renderEmail(emailVariant(c, r.variant), { id: r.id, name: r.name, email: r.email, fields: (r.contactId && fields.get(r.contactId)) || {} }, links);
     try {
       const { messageId } = await sendEmail(
         smtp,
@@ -151,8 +165,9 @@ export class MarketingWorker {
       }
       const gateway = await smsGatewayRepository.get(campaign.userId);
       const fields = await fieldsOf(recipients);
+      const links = campaign.trackClicks ? await linksFor("sms", campaign.id) : undefined;
       for (let i = 0; i < recipients.length; i++) {
-        const halted = await this.sendOneSms(campaign, gateway, recipients[i], fields);
+        const halted = await this.sendOneSms(campaign, gateway, recipients[i], fields, links);
         if (halted) {
           for (const r of recipients.slice(i + 1)) await smsCampaignsRepository.updateRecipient(r.id, { status: "pending" });
           await smsCampaignsRepository.transition(campaign.id, ["sending"], "failed", { errorMessage: halted });
@@ -165,8 +180,10 @@ export class MarketingWorker {
     return rows.length;
   }
 
-  private async sendOneSms(c: SmsCampaign, gateway: SmsGateway | undefined, r: SmsRecipient, fields: Fields): Promise<string | null> {
-    const body = renderMergeTags(c.message, { name: r.name, phone: r.phone, fields: (r.contactId && fields.get(r.contactId)) || {} });
+  private async sendOneSms(c: SmsCampaign, gateway: SmsGateway | undefined, r: SmsRecipient, fields: Fields, links?: LinkMap): Promise<string | null> {
+    const message = r.variant === "B" ? ((c.abTest as { messageB?: string } | null)?.messageB || c.message) : c.message;
+    const template = links?.size ? await shortenSmsLinks(message, links, r.id) : message;
+    const body = renderMergeTags(template, { name: r.name, phone: r.phone, fields: (r.contactId && fields.get(r.contactId)) || {} });
     const callback = gateway && gateway.provider !== "simulator" ? `${publicBaseUrl()}/webhooks/sms/${gateway.provider}/${gateway.id}` : undefined;
     try {
       const { messageId } = await getSmsProvider(gateway).send(r.phone, body, { statusCallbackUrl: callback });

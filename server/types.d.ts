@@ -10,6 +10,7 @@ export interface AuthUser {
   createdBy: string | null;
   /** Tenant owner id: the admin's own id, a team member's admin, null for superadmins. */
   tenantId: string | null;
+  twoFactorEnabled: boolean;
 }
 
 declare global {
@@ -30,7 +31,13 @@ declare module "express-session" {
     csrfToken?: string;
     oauthState?: string;
     oauthNext?: string;
+    oauthNonce?: string;
+    oauthProvider?: string;
+    /** Set when a signed-in user starts SSO to link a provider to their account. */
+    oauthLinkUserId?: string;
     maintenanceBypass?: boolean;
+    /** Password (or SSO) accepted; waiting for the two-factor code. */
+    pending2fa?: { userId: string; expiresAt: number; attempts: number; via: string };
   }
 }
 
