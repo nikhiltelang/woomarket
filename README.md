@@ -76,6 +76,14 @@ templates, personalisation, scheduling, open tracking, RFC 8058 one-click unsubs
 pause/resume/cancel), **SMS marketing** (Twilio, Vonage or simulator; GSM-7/UCS-2 segment and
 credit calculation, signed delivery-receipt webhooks), plans & subscription limits, dashboards, in-app updater.
 
+**Public API:** `POST /api/v1/send` sends email, SMS or WhatsApp (approved template) to up to 1,000
+recipients per call; each call becomes a campaign visible in the app. Authenticate with an Access Key ID
+and Secret Access Key (Account → API keys), either as HTTP Basic or as an HMAC-SHA256 signed request
+(`X-WM-Access-Key-Id`, `X-WM-Timestamp`, `X-WM-Signature`; 5-minute window, replay-protected).
+Supports `Idempotency-Key`, `scheduleAt`, per-key channel limits, the access level's API flag, plan
+limits and message quotas, and skips unsubscribed recipients. The in-app guide has curl, Node.js,
+Python and PHP examples.
+
 **Equal channels:** WhatsApp, email and SMS are peers in the tenant UI — one sidebar group with the
 same sections each (campaigns, templates, settings), a shared channel page header with the same four
 metrics, and a tenant-wide dashboard (`GET /api/dashboard/overview`) comparing the three side by side.

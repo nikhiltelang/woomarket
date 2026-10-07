@@ -8,6 +8,7 @@ import {
   ChevronsUpDown,
   CreditCard,
   Bug,
+  KeyRound,
   LayoutGrid,
   ScrollText,
   TicketPercent,
@@ -165,6 +166,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
       items: [
         { href: "/team", label: t("nav.team"), icon: <Shield className="h-4 w-4" />, permission: "team:view" },
         { href: "/plans", label: t("nav.plan"), icon: <BarChart3 className="h-4 w-4" /> },
+        ...(user?.role === "admin" ? [{ href: "/developers/api-keys", label: t("nav.apiKeys"), icon: <KeyRound className="h-4 w-4" /> }] : []),
         { href: "/support", label: t("nav.reportRequest"), icon: <Bug className="h-4 w-4" /> },
       ],
     },

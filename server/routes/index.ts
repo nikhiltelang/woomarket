@@ -24,6 +24,8 @@ import { platformPublicRoutes, platformRoutes } from "./platform.routes";
 import { calculate as calculateSmsSegments } from "../controllers/sms-marketing.controller";
 
 /** All /api routes. Authentication, rate limiting and CSRF run before this router. */
+import { apiKeyRoutes } from "./public-api.routes";
+
 export function apiRouter(): Router {
   const api = Router();
 
@@ -60,6 +62,7 @@ export function apiRouter(): Router {
   api.use("/sms-marketing", smsMarketingRoutes);
   api.use(smtpRoutes);
   api.use(platformRoutes);
+  api.use(apiKeyRoutes);
   api.use("/app-update", requireRole("superadmin"), appUpdateRouter());
 
   return api;

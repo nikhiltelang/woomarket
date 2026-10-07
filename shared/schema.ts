@@ -1044,6 +1044,70 @@ export const requestLogs = mysqlTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Public API v1: access keys, idempotency and replay protection
+// ---------------------------------------------------------------------------
+
+export const apiKeys = mysqlTable(
+  "api_keys",
+  {
+    id: id(),
+    /** Tenant the key acts for. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdBy: char("created_by", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    /** Public identifier, e.g. AKWM7Q2X9H4K1M3P5R8T. */
+    accessKeyId: varchar("access_key_id", { length: 32 }).notNull().unique(),
+    /** SHA-256 of the secret, for Basic authentication. */
+    secretHash: char("secret_hash", { length: 64 }).notNull(),
+    /** Encrypted secret (needed to verify HMAC signatures). */
+    secretEncrypted: text("secret_encrypted").notNull(),
+    secretLast4: varchar("secret_last4", { length: 4 }).notNull(),
+    /** Channels this key may send on. */
+    channels: json("channels").$type<("email" | "sms" | "whatsapp")[]>().notNull(),
+    /** WhatsApp number used when a request doesn't say which one. */
+    defaultChannelId: char("default_channel_id", { length: 36 }).references(() => channels.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 20 }).notNull().default("active"),
+    expiresAt: ts("expires_at"),
+    lastUsedAt: ts("last_used_at"),
+    lastUsedIp: varchar("last_used_ip", { length: 64 }),
+    requestCount: int("request_count").notNull().default(0),
+    revokedAt: ts("revoked_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("api_keys_user_idx").on(t.userId)],
+);
+
+export const apiIdempotencyKeys = mysqlTable(
+  "api_idempotency_keys",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    apiKeyId: char("api_key_id", { length: 36 })
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: "cascade" }),
+    idempotencyKey: varchar("idempotency_key", { length: 255 }).notNull(),
+    requestHash: char("request_hash", { length: 64 }).notNull(),
+    statusCode: int("status_code").notNull(),
+    response: json("response").$type<unknown>(),
+    createdAt: ts("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [uniqueIndex("api_idempotency_key_unique").on(t.apiKeyId, t.idempotencyKey), index("api_idempotency_created_idx").on(t.createdAt)],
+);
+
+/** Signatures seen inside the clock-skew window; a repeat is a replay. */
+export const apiUsedSignatures = mysqlTable(
+  "api_used_signatures",
+  {
+    signature: char("signature", { length: 64 }).primaryKey(),
+    expiresAt: ts("expires_at").notNull(),
+  },
+  (t) => [index("api_used_signatures_expires_idx").on(t.expiresAt)],
+);
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -1086,6 +1150,9 @@ export const MANAGED_TABLES = [
   "coupon_redemptions",
   "support_requests",
   "request_logs",
+  "api_keys",
+  "api_idempotency_keys",
+  "api_used_signatures",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -1127,3 +1194,4 @@ export type SentNotification = InferSelectModel<typeof sentNotifications>;
 export type Coupon = InferSelectModel<typeof coupons>;
 export type SupportRequest = InferSelectModel<typeof supportRequests>;
 export type RequestLog = InferSelectModel<typeof requestLogs>;
+export type ApiKey = InferSelectModel<typeof apiKeys>;

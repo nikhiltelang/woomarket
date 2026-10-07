@@ -45,6 +45,7 @@ const SystemInfo = lazy(() => import("@/pages/admin/system-info"));
 const CachePage = lazy(() => import("@/pages/admin/cache"));
 const LogsPage = lazy(() => import("@/pages/admin/logs"));
 const ReportRequest = lazy(() => import("@/pages/report-request"));
+const ApiKeys = lazy(() => import("@/pages/api-keys"));
 
 const TENANT: Role[] = ["admin", "team"];
 const SUPER: Role[] = ["superadmin"];
@@ -71,6 +72,7 @@ const routes: RouteDef[] = [
   { path: "/team", component: Team, roles: TENANT, permission: "team:view" },
   { path: "/plans", component: Plans, roles: TENANT },
   { path: "/support", component: ReportRequest, roles: TENANT },
+  { path: "/developers/api-keys", component: ApiKeys, roles: ["admin"] },
   { path: "/account", component: Account },
   { path: "/admin", component: AdminOverview, roles: SUPER },
   { path: "/users/send-notification", component: SendNotification, roles: SUPER },

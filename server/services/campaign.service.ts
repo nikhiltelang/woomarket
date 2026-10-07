@@ -89,10 +89,16 @@ export async function startCampaign(campaignId: string): Promise<Campaign> {
     const vars = template.bodyVariables ?? 0;
     const mapping = campaign.variableMapping ?? {};
 
+    // Rows of a "contacts" audience may carry their own values ("1", "2", ...), e.g. from the public API.
+    const perRecipient = new Map((campaign.csvData ?? []).filter((r) => r.contactId).map((r) => [r.contactId, r]));
     const seen = new Set<string>();
     const recipients = contacts
       .filter((c) => !seen.has(c.phone) && seen.add(c.phone))
-      .map((c) => ({ contact: c, params: buildParams(vars, mapping, c) }));
+      .map((c) => {
+        const own = perRecipient.get(c.id);
+        const params = buildParams(vars, mapping, c).map((p, i) => own?.[String(i + 1)] ?? p);
+        return { contact: c, params };
+      });
     const owner = (await channelsRepository.findById(campaign.channelId!))?.createdBy;
     if (owner) await assertMessageQuota(owner, recipients.length);
 

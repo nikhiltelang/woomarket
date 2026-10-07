@@ -15,6 +15,7 @@ import { robotsTxt, sitemapXml } from "./controllers/system-config.controller";
 import { asyncHandler } from "./lib/http";
 import { UPLOADS_DIR } from "./lib/uploads";
 import { requestLogger } from "./middlewares/request-log";
+import { publicApiRoutes } from "./routes/public-api.routes";
 
 export interface CreateAppOptions {
   sessionStore?: session.Store;
@@ -80,7 +81,9 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       limit: "2mb",
       // Webhook signatures are computed over the exact bytes received.
       verify: (req, _res, buf) => {
-        if ((req as express.Request).originalUrl?.startsWith("/webhook")) (req as express.Request).rawBody = Buffer.from(buf);
+        // Webhook signatures and signed API requests are computed over the exact bytes received.
+        const url = (req as express.Request).originalUrl ?? "";
+        if (url.startsWith("/webhook") || url.startsWith("/api/v1/")) (req as express.Request).rawBody = Buffer.from(buf);
       },
     }),
   );
@@ -119,6 +122,8 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
   app.get("/sitemap.xml", asyncHandler(sitemapXml));
 
   app.use(webhookRoutes);
+  // Public API: access-key authentication only (no session, no CSRF).
+  app.use("/api/v1", publicApiRoutes);
   app.use("/api", authenticate, maintenanceGuard, apiRateLimiter, csrfMiddleware, apiRouter());
   app.use("/api", notFoundApi);
   app.use(errorHandler);

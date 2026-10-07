@@ -6,6 +6,7 @@ import { cronLogRepository } from "../repositories/platform.repository";
 import { whatsappFactory } from "../services/whatsapp";
 import { requestLogsRepository } from "../repositories/request-logs.repository";
 import { requestLogSettings } from "../services/request-log.service";
+import { apiKeysRepository } from "../repositories/api-keys.repository";
 
 const log = childLogger("cron");
 
@@ -59,6 +60,13 @@ export const jobs: Job[] = [
       const removed = await requestLogsRepository.deleteOlderThan(new Date(Date.now() - retentionDays * 86400_000));
       return `${removed} log entr${removed === 1 ? "y" : "ies"} older than ${retentionDays} day(s) removed`;
     },
+  },
+  {
+    key: "api-housekeeping",
+    name: "API housekeeping",
+    description: "Removes expired request signatures and idempotency records of the public API.",
+    intervalMs: 15 * 60 * 1000,
+    run: async () => `${await apiKeysRepository.prune()} record(s) removed`,
   },
   {
     key: "cron-log-cleanup",
