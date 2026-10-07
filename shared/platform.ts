@@ -270,6 +270,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.whatsappMarketing": "WhatsApp marketing",
   "nav.channelSettings": "Settings",
   "nav.dashboard": "Dashboard",
+  "nav.reports": "Reports",
   "nav.inbox": "Inbox",
   "nav.contacts": "Contacts",
   "nav.groups": "Groups",

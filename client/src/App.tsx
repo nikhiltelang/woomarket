@@ -52,6 +52,7 @@ const LogsPage = lazy(() => import("@/pages/admin/logs"));
 const ReportRequest = lazy(() => import("@/pages/report-request"));
 const ApiKeys = lazy(() => import("@/pages/api-keys"));
 const Webhooks = lazy(() => import("@/pages/webhooks"));
+const Reports = lazy(() => import("@/pages/reports"));
 const Preferences = lazy(() => import("@/pages/preferences"));
 
 const TENANT: Role[] = ["admin", "team"];
@@ -83,6 +84,7 @@ const routes: RouteDef[] = [
   { path: "/preferences", component: Preferences, roles: TENANT },
   { path: "/developers/api-keys", component: ApiKeys, roles: ["admin"] },
   { path: "/developers/webhooks", component: Webhooks, roles: ["admin"] },
+  { path: "/reports", component: Reports, roles: TENANT, permission: "analytics:view" },
   { path: "/account", component: Account },
   { path: "/admin", component: AdminOverview, roles: SUPER },
   { path: "/users/send-notification", component: SendNotification, roles: SUPER },

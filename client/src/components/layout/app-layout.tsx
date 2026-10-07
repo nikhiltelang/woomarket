@@ -121,7 +121,10 @@ function useNav(): { title: string; items: NavItem[] }[] {
   return [
     {
       title: t("nav.overview"),
-      items: [{ href: "/dashboard", label: t("nav.dashboard"), icon: <LayoutDashboard className="h-4 w-4" /> }],
+      items: [
+        { href: "/dashboard", label: t("nav.dashboard"), icon: <LayoutDashboard className="h-4 w-4" /> },
+        { href: "/reports", label: t("nav.reports"), icon: <BarChart3 className="h-4 w-4" />, permission: "analytics:view" },
+      ],
     },
     {
       title: t("nav.audience"),

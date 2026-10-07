@@ -9,6 +9,7 @@ import { requestLogSettings } from "../services/request-log.service";
 import { apiKeysRepository } from "../repositories/api-keys.repository";
 import { decideDueTests } from "../services/ab-test.service";
 import { webhooksRepository } from "../services/webhooks.service";
+import { runDueSchedules } from "../services/report-schedules.service";
 
 const log = childLogger("cron");
 
@@ -62,6 +63,13 @@ export const jobs: Job[] = [
       const removed = await requestLogsRepository.deleteOlderThan(new Date(Date.now() - retentionDays * 86400_000));
       return `${removed} log entr${removed === 1 ? "y" : "ies"} older than ${retentionDays} day(s) removed`;
     },
+  },
+  {
+    key: "scheduled-reports",
+    name: "Scheduled reports",
+    description: "Emails tenants' daily, weekly and monthly reports when they're due.",
+    intervalMs: 15 * 60 * 1000,
+    run: async () => `${await runDueSchedules()} report(s) sent`,
   },
   {
     key: "webhook-delivery-cleanup",

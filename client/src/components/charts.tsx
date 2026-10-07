@@ -9,7 +9,8 @@ export interface Series {
 }
 
 const niceMax = (v: number) => {
-  if (v <= 4) return Math.max(1, Math.ceil(v));
+  // Even, so the midpoint tick is a whole number (no "0.5" rounding to "1").
+  if (v <= 4) return Math.max(2, Math.ceil(v / 2) * 2);
   const pow = 10 ** Math.floor(Math.log10(v));
   const n = v / pow;
   return (n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;

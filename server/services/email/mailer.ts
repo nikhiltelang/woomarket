@@ -37,6 +37,13 @@ export interface OutgoingEmail {
   headers?: Record<string, string>;
   /** Provider tags (SES message tags), e.g. the recipient id for bounce matching. */
   tags?: Record<string, string>;
+  attachments?: EmailAttachment[];
+}
+
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
 }
 
 export interface SimulatedEmail extends OutgoingEmail {
@@ -139,7 +146,7 @@ export async function sendEmail(smtp: ResolvedSmtp, msg: OutgoingEmail, tenantId
   if (smtp.provider === "ses") {
     const messageId = await sendWithSes(
       { region: smtp.region ?? "us-east-1", accessKeyId: smtp.user ?? "", secretAccessKey: smtp.pass ?? "" },
-      { from, to: formatAddress(msg.toName, msg.to), replyTo: msg.replyTo || undefined, subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers, tags: msg.tags, configurationSet: smtp.configurationSet },
+      { from, to: formatAddress(msg.toName, msg.to), replyTo: msg.replyTo || undefined, subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers, tags: msg.tags, configurationSet: smtp.configurationSet, attachments: msg.attachments },
     );
     return { messageId, simulated: false };
   }
@@ -151,9 +158,12 @@ export async function sendEmail(smtp: ResolvedSmtp, msg: OutgoingEmail, tenantId
     html: msg.html,
     text: msg.text,
     headers: msg.headers,
+    attachments: msg.attachments,
   });
   if (smtp.source === "simulator") {
-    outbox.push({ ...msg, tenantId, from, messageId: info.messageId, at: new Date().toISOString() });
+    // The simulator keeps attachment names and sizes, not the files.
+    const attachments = msg.attachments?.map((a) => ({ filename: a.filename, contentType: a.contentType, size: a.content.length }));
+    outbox.push({ ...msg, attachments: attachments as unknown as EmailAttachment[], tenantId, from, messageId: info.messageId, at: new Date().toISOString() });
     if (outbox.length > 200) outbox.splice(0, outbox.length - 200);
     log.debug({ to: msg.to, subject: msg.subject }, "Simulated email captured");
   }

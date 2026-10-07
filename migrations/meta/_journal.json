@@ -127,6 +127,13 @@
       "when": 1791405132935,
       "tag": "0017_ai_assistant",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1791406264205,
+      "tag": "0018_report_schedules",
+      "breakpoints": true
     }
   ]
 }

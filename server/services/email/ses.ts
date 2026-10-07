@@ -29,6 +29,7 @@ export interface SesMessage {
   /** SES message tags (letters, digits, _ and - only), returned in event notifications. */
   tags?: Record<string, string>;
   configurationSet?: string | null;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -86,7 +87,7 @@ const tagValue = (v: string) => v.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 256);
 export async function sendWithSes(c: SesCredentials, m: SesMessage): Promise<string> {
   const e = entry(c);
   await refreshRate(e);
-  const raw = await new MailComposer({ from: m.from, to: m.to, replyTo: m.replyTo, subject: m.subject, html: m.html, text: m.text, headers: m.headers }).compile().build();
+  const raw = await new MailComposer({ from: m.from, to: m.to, replyTo: m.replyTo, subject: m.subject, html: m.html, text: m.text, headers: m.headers, attachments: m.attachments }).compile().build();
   await e.limiter.wait();
   let res;
   try {

@@ -1261,6 +1261,41 @@ export const tenantSettings = mysqlTable("tenant_settings", {
 });
 
 // ---------------------------------------------------------------------------
+// Scheduled reports
+// ---------------------------------------------------------------------------
+
+export const reportSchedules = mysqlTable(
+  "report_schedules",
+  {
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    sections: json("sections").$type<string[]>().notNull(),
+    /** daily | weekly | monthly */
+    frequency: varchar("frequency", { length: 10 }).notNull(),
+    dayOfWeek: int("day_of_week").notNull().default(1),
+    hour: int("hour").notNull().default(8),
+    /** pdf | csv | both */
+    format: varchar("format", { length: 4 }).notNull().default("pdf"),
+    recipients: json("recipients").$type<string[]>().notNull(),
+    channelId: char("channel_id", { length: 36 }),
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: ts("next_run_at"),
+    lastRunAt: ts("last_run_at"),
+    /** "sent" | "failed: …" */
+    lastStatus: varchar("last_status", { length: 300 }),
+    createdBy: char("created_by", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("report_schedules_due_idx").on(t.enabled, t.nextRunAt), index("report_schedules_user_idx").on(t.userId)],
+);
+export type ReportSchedule = InferSelectModel<typeof reportSchedules>;
+
+// ---------------------------------------------------------------------------
 // AI assistant usage
 // ---------------------------------------------------------------------------
 
@@ -1470,6 +1505,7 @@ export const MANAGED_TABLES = [
   "webhook_endpoints",
   "webhook_deliveries",
   "ai_usage",
+  "report_schedules",
 ] as const;
 
 // ---------------------------------------------------------------------------
