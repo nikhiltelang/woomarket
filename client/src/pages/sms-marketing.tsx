@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AiDraftButton } from "@/components/ai";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Copy, Eye, FlaskConical, MessageSquareText, Pause, Pencil, Play, Plus, Send, Trash2, XCircle } from "lucide-react";
 import type { SmsCampaign, SmsRecipient } from "@shared/schema";
@@ -176,7 +177,10 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
             label={
               <span className="flex flex-wrap items-center justify-between gap-2">
                 Message
-                <MergeTagButtons tags={[...SMS_TAGS, ...customTags]} onInsert={(t) => setMessage(insertAtCursor(ref.current, message, t))} />
+                <span className="flex flex-wrap items-center gap-2">
+                  <MergeTagButtons tags={[...SMS_TAGS, ...customTags]} onInsert={(t) => setMessage(insertAtCursor(ref.current, message, t))} />
+                  <AiDraftButton channel="sms" current={message} onPick={(v) => setMessage(v.text)} />
+                </span>
               </span>
             }
             htmlFor="sms-msg"

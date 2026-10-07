@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Tabs, useConfirm } from "@/components/ui/overlay";
 import { insertAtCursor, MergeTagButtons } from "@/components/marketing";
+import { AiEmailDraftButton } from "@/components/ai";
 
 const PALETTE: { type: BlockType; icon: ReactNode; hint: string }[] = [
   { type: "heading", icon: <Heading className="h-4 w-4" />, hint: "Title or section header" },
@@ -545,7 +546,23 @@ export function EmailContentField({ value, onChange, mergeTags, title, idPrefix 
             <p className="text-sm font-medium">{value.design.blocks.length} block{value.design.blocks.length === 1 ? "" : "s"}</p>
             <p className="text-xs text-fg-muted">Drag-and-drop design · mobile-friendly HTML is generated for you</p>
           </div>
-          <Button type="button" onClick={() => setOpen(true)}>Open builder</Button>
+          <div className="flex flex-wrap gap-2">
+            <AiEmailDraftButton
+              onDraft={(d) => {
+                const keep = value.design?.blocks.find((b) => b.type === "footer");
+                const blocks: Block[] = [
+                  { ...newBlock("heading"), text: d.heading } as Block,
+                  { ...newBlock("text"), text: d.paragraphs.join("\n\n") } as Block,
+                  ...(d.buttonLabel ? [{ ...newBlock("button"), label: d.buttonLabel } as Block] : []),
+                  newBlock("divider"),
+                  keep ?? newBlock("footer"),
+                ];
+                setDesign({ ...(value.design ?? starterDesign("blank")), blocks });
+                setOpen(true);
+              }}
+            />
+            <Button type="button" onClick={() => setOpen(true)}>Open builder</Button>
+          </div>
         </div>
       ) : (
         <>

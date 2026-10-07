@@ -14,6 +14,7 @@ import { channelRoutes } from "./channels.routes";
 import { contactRoutes } from "./contacts.routes";
 import { groupRoutes } from "./groups.routes";
 import { segmentRoutes } from "./segments.routes";
+import { aiRoutes } from "./ai.routes";
 import { templateRoutes } from "./templates.routes";
 import { conversationRoutes } from "./conversations.routes";
 import { campaignRoutes } from "./campaigns.routes";
@@ -58,6 +59,7 @@ export function apiRouter(): Router {
   api.use(contactRoutes);
   api.use("/groups", groupRoutes);
   api.use("/segments", segmentRoutes);
+  api.use("/ai", aiRoutes);
   api.use("/templates", templateRoutes);
   api.use("/conversations", conversationRoutes);
   api.use("/campaigns", campaignRoutes);

@@ -120,6 +120,13 @@
       "when": 1791403795762,
       "tag": "0016_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1791405132935,
+      "tag": "0017_ai_assistant",
+      "breakpoints": true
     }
   ]
 }

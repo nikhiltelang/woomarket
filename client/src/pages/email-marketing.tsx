@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AiDraftButton } from "@/components/ai";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Eye, Mail, MailOpen, Pause, Pencil, Play, Plus, Send, Trash2, XCircle } from "lucide-react";
 import type { EmailCampaign, EmailRecipient, EmailTemplate } from "@shared/schema";
@@ -232,7 +233,15 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
           <Field label="Campaign name" htmlFor="em-name" hint="Internal; recipients don't see it.">
             <Input id="em-name" value={s.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-          <Field label="Subject line" htmlFor="em-subject">
+          <Field
+            label={
+              <span className="flex flex-wrap items-center justify-between gap-2">
+                Subject line
+                <AiDraftButton channel="email_subject" current={s.subject} label="Suggest subjects" onPick={(v) => setS((x) => ({ ...x, subject: v.text, previewText: v.preview ?? x.previewText }))} />
+              </span>
+            }
+            htmlFor="em-subject"
+          >
             <Input id="em-subject" ref={subjectRef} value={s.subject} onChange={(e) => set("subject", e.target.value)} maxLength={255} />
           </Field>
           <Field label="Preview text (optional)" htmlFor="em-pre" hint="Shown after the subject in most inboxes.">

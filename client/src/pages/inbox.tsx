@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AiInsightsPanel, AiReplySuggestions, IntentBadge } from "@/components/ai";
+import type { ConversationInsights } from "@shared/ai";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -117,6 +119,7 @@ function ConversationList({
                     <span className="mt-1 flex flex-wrap gap-1">
                       {c.status !== "open" && <StatusBadge status={c.status} />}
                       {c.assigneeName && <Badge>@{c.assigneeName}</Badge>}
+                      <IntentBadge insights={c.aiInsights as Partial<ConversationInsights> | null} />
                     </span>
                   </span>
                 </button>
@@ -386,6 +389,8 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
                 </Button>
               </div>
             ) : (
+              <>
+              <AiReplySuggestions key={id} conversationId={id} onPick={(t) => setText(t)} />
               <div className="flex items-end gap-2">
                 <Button variant="ghost" size="icon" onClick={() => setTemplateOpen(true)} aria-label="Send a template">
                   <FileText className="h-4 w-4" />
@@ -412,6 +417,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
+              </>
             )}
           </div>
         )}
@@ -449,6 +455,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
             </div>
           )}
         </dl>
+        <AiInsightsPanel key={c.id} conversationId={c.id} insights={(c.aiInsights as ConversationInsights | null) ?? null} analyzedAt={c.aiAnalyzedAt ? String(c.aiAnalyzedAt) : null} />
         {can("inbox:assign") && (
           <Field label="Assigned to" htmlFor="assignee" className="mt-6">
             <Select id="assignee" value={c.assignedTo ?? ""} onChange={(e) => update.mutate({ assignedTo: e.target.value || null })}>

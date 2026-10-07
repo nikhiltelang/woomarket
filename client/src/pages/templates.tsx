@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AiDraftButton } from "@/components/ai";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -146,9 +147,12 @@ function TemplateDialog({ open, onClose, template }: { open: boolean; onClose: (
             label={
               <span className="flex items-center justify-between">
                 Body
-                <button type="button" onClick={addVariable} className="text-xs font-medium text-primary hover:underline">
-                  + Add variable
-                </button>
+                <span className="flex items-center gap-3">
+                  <AiDraftButton channel="whatsapp" current={form.getValues("body")} onPick={(v) => form.setValue("body", v.text, { shouldDirty: true, shouldValidate: true })} />
+                  <button type="button" onClick={addVariable} className="text-xs font-medium text-primary hover:underline">
+                    + Add variable
+                  </button>
+                </span>
               </span>
             }
             htmlFor="t-body"

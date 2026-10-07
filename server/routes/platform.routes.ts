@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as sys from "../controllers/system-config.controller";
+import * as ai from "../controllers/ai.controller";
 import * as auth from "../controllers/auth.controller";
 import * as sso from "../controllers/sso-auth.controller";
 import { languages, levels, notificationsCtl, policies } from "../controllers/platform.controller";
@@ -52,6 +53,8 @@ platformRoutes.get("/system-config", sa, h(sys.getAll));
 platformRoutes.get("/system-config/cron-jobs", sa, h(sys.listCronJobs));
 platformRoutes.post("/system-config/cron-jobs/:jobKey/run", sa, h(sys.runCronJob));
 platformRoutes.post("/system-config/test-email", sa, h(sys.testEmail));
+platformRoutes.post("/system-config/ai/test", sa, h(ai.test));
+platformRoutes.get("/system-config/ai/usage", sa, h(ai.usage));
 platformRoutes.put("/system-config/:section", sa, h(sys.updateSection));
 platformRoutes.put("/brand-settings", sa, imageUpload.fields([{ name: "logo", maxCount: 1 }, { name: "favicon", maxCount: 1 }]), h(sys.updateBranding));
 

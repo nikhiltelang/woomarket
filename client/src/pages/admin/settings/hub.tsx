@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   UserCircle,
   Wrench,
+  Sparkles,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/app-layout";
 import { Card, EmptyState, PageHeader } from "@/components/ui/display";
@@ -37,6 +38,7 @@ export const SETTING_CARDS: SettingCard[] = [
   { slug: "notification", title: "Notification setting", description: "Platform SMTP server and the global email template for system emails.", icon: Bell },
   { slug: "seo", title: "SEO configuration", description: "Meta title, description, keywords and social sharing image.", icon: Globe2 },
   { slug: "frontend", title: "Manage frontend", description: "Headline, sub-headline and highlights on the sign-in and sign-up pages.", icon: LayoutTemplate },
+  { slug: "ai-assistant", title: "AI assistant", description: "Claude-powered drafting, reply suggestions and conversation summaries for tenants.", icon: Sparkles },
   { slug: "social-login", title: "Social login setting", description: "Let people sign in with Google or Microsoft.", icon: UserCircle },
   { slug: "language", title: "Language", description: "Add languages and translate the interface.", icon: Languages },
   { slug: "cron", title: "Cron job setting", description: "See scheduled jobs, their last runs, and run them on demand.", icon: Clock },

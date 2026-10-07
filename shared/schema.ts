@@ -275,6 +275,9 @@ export const conversations = mysqlTable(
     lastMessageAt: ts("last_message_at"),
     lastIncomingMessageAt: ts("last_incoming_message_at"),
     lastMessageText: text("last_message_text"),
+    /** AI summary, sentiment and intent (see shared/ai.ts), refreshed on demand. */
+    aiInsights: json("ai_insights").$type<Record<string, unknown>>(),
+    aiAnalyzedAt: ts("ai_analyzed_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -843,6 +846,8 @@ export interface ExtensionSettings {
   googleLogin?: { enabled: boolean; clientId: string; clientSecret?: string };
   /** tenant: "common" | "organizations" | "consumers" | a directory id or domain */
   microsoftLogin?: { enabled: boolean; clientId: string; clientSecret?: string; tenant: string };
+  /** Claude-powered assistant. apiKey is encrypted; monthlyLimit -1 = unlimited (per tenant). */
+  aiAssistant?: { enabled: boolean; apiKey?: string; model: string; monthlyLimit: number };
 }
 
 export const systemConfigurations = mysqlTable("system_configurations", {
@@ -1256,6 +1261,30 @@ export const tenantSettings = mysqlTable("tenant_settings", {
 });
 
 // ---------------------------------------------------------------------------
+// AI assistant usage
+// ---------------------------------------------------------------------------
+
+export const aiUsage = mysqlTable(
+  "ai_usage",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The person who asked. */
+    actorId: char("actor_id", { length: 36 }),
+    feature: varchar("feature", { length: 40 }).notNull(),
+    model: varchar("model", { length: 80 }).notNull(),
+    inputTokens: int("input_tokens").notNull().default(0),
+    outputTokens: int("output_tokens").notNull().default(0),
+    simulated: boolean("simulated").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("ai_usage_user_created_idx").on(t.userId, t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
 // Outgoing webhooks
 // ---------------------------------------------------------------------------
 
@@ -1440,6 +1469,7 @@ export const MANAGED_TABLES = [
   "user_two_factor",
   "webhook_endpoints",
   "webhook_deliveries",
+  "ai_usage",
 ] as const;
 
 // ---------------------------------------------------------------------------

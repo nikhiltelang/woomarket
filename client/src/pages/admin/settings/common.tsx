@@ -13,6 +13,7 @@ export type AdminSystemConfig = Omit<SystemConfig, "extensionSettings"> & {
   extensionSettings: {
     googleLogin: { enabled: boolean; clientId: string; hasClientSecret: boolean };
     microsoftLogin: { enabled: boolean; clientId: string; tenant: string; hasClientSecret: boolean };
+    aiAssistant: { enabled: boolean; model: string; monthlyLimit: number; hasApiKey: boolean };
   };
 };
 

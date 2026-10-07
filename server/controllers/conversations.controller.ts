@@ -19,7 +19,7 @@ import { assertChannelAccess } from "../middlewares/tenant";
 import { findOrCreateConversation, isWithinServiceWindow, sendConversationMessage } from "../services/messaging.service";
 import { realtime } from "../services/realtime";
 
-async function loadConversation(req: Request, id = req.params.id ?? req.params.conversationId): Promise<{ conversation: Conversation; channel: Channel }> {
+export async function loadConversation(req: Request, id = req.params.id ?? req.params.conversationId): Promise<{ conversation: Conversation; channel: Channel }> {
   const conversation = await conversationsRepository.findById(id);
   if (!conversation) throw notFound("Conversation");
   const channel = await assertChannelAccess(req.user!, conversation.channelId).catch(() => {

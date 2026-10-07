@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { AI_MODELS } from "@shared/ai";
 import { Copy, ExternalLink, Send } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -348,6 +349,69 @@ function SocialLoginForm({ c }: { c: SystemConfigResponse }) {
   );
 }
 
+// --- AI assistant ------------------------------------------------------------------------------
+
+function AiAssistantForm({ c }: { c: SystemConfigResponse }) {
+  const toast = useToast();
+  const a = c.data.extensionSettings.aiAssistant;
+  const known = AI_MODELS.some((m) => m.id === a.model);
+  const [v, setV] = useState({ enabled: a.enabled, apiKey: "", model: known ? a.model : "custom", custom: known ? "" : a.model, monthlyLimit: a.monthlyLimit });
+  const model = v.model === "custom" ? v.custom.trim() : v.model;
+  const save = useSaveSection("ai-assistant", "AI assistant settings saved");
+  const usage = useQuery<{ data: { requests: number; inputTokens: number; outputTokens: number; tenants: number; byFeature: { feature: string; requests: number }[] } }>({ queryKey: ["/api/system-config/ai/usage"] });
+  const test = useMutation({
+    mutationFn: () => apiRequest<{ data: { ms: number; model: string } }>("POST", "/api/system-config/ai/test", { model, ...(v.apiKey ? { apiKey: v.apiKey } : {}) }),
+    onSuccess: (r) => toast({ title: "Connected", description: `${r.data.model} answered in ${r.data.ms} ms.`, variant: "success" }),
+    onError: (err) => toast({ title: "Test failed", description: (err as Error).message, variant: "error" }),
+  });
+  const u = usage.data?.data;
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionCard>
+        <div className="flex max-w-2xl flex-col gap-5">
+          <Switch label="AI assistant" description="Tenants whose access level includes the AI assistant can draft SMS, WhatsApp templates and emails, get reply suggestions and summarise inbox conversations. Nothing is sent without a person." checked={v.enabled} onChange={(enabled) => setV({ ...v, enabled })} />
+          <Field label="Anthropic API key" htmlFor="ai-key" hint={a.hasApiKey ? "A key is saved (encrypted). Leave blank to keep it." : <>Create one at console.anthropic.com → API keys. Without a key, development servers use a simulator.</>}>
+            <Input id="ai-key" type="password" autoComplete="off" value={v.apiKey} onChange={(e) => setV({ ...v, apiKey: e.target.value })} placeholder="sk-ant-…" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Model" htmlFor="ai-model" hint={AI_MODELS.find((m) => m.id === v.model)?.hint}>
+              <Select id="ai-model" value={v.model} onChange={(e) => setV({ ...v, model: e.target.value })}>
+                {AI_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                <option value="custom">Other model ID…</option>
+              </Select>
+            </Field>
+            <Field label="Requests per tenant per month" htmlFor="ai-limit" hint="-1 for no limit. Each draft, suggestion or summary is one request.">
+              <Input id="ai-limit" type="number" min={-1} value={v.monthlyLimit} onChange={(e) => setV({ ...v, monthlyLimit: Number(e.target.value) })} />
+            </Field>
+          </div>
+          {v.model === "custom" && (
+            <Field label="Model ID" htmlFor="ai-custom"><Input id="ai-custom" value={v.custom} onChange={(e) => setV({ ...v, custom: e.target.value })} placeholder="claude-…" /></Field>
+          )}
+          <p className="text-xs text-fg-muted">Prompts include the tenant's brief and, for inbox features, the latest 40 messages of the conversation. They're sent to Anthropic for processing; mention this in your privacy policy.</p>
+          <div>
+            <Button variant="outline" onClick={() => test.mutate()} loading={test.isPending} disabled={!model || (!v.apiKey && !a.hasApiKey)}>Test connection</Button>
+          </div>
+        </div>
+        <SaveBar pending={save.isPending} disabled={!model || !Number.isInteger(v.monthlyLimit) || v.monthlyLimit < -1} onSave={() => save.mutate({ enabled: v.enabled, model, monthlyLimit: v.monthlyLimit, ...(v.apiKey ? { apiKey: v.apiKey } : {}) })} />
+      </SectionCard>
+      <SectionCard>
+        <h2 className="text-sm font-semibold">This month</h2>
+        {u ? (
+          <div className="mt-3 grid gap-4 text-sm sm:grid-cols-4">
+            <div><p className="text-2xl font-semibold tabular-nums">{u.requests.toLocaleString()}</p><p className="text-xs text-fg-muted">requests</p></div>
+            <div><p className="text-2xl font-semibold tabular-nums">{u.tenants.toLocaleString()}</p><p className="text-xs text-fg-muted">tenants</p></div>
+            <div><p className="text-2xl font-semibold tabular-nums">{u.inputTokens.toLocaleString()}</p><p className="text-xs text-fg-muted">input tokens</p></div>
+            <div><p className="text-2xl font-semibold tabular-nums">{u.outputTokens.toLocaleString()}</p><p className="text-xs text-fg-muted">output tokens</p></div>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-fg-muted">Loading…</p>
+        )}
+        {!!u?.byFeature.length && <p className="mt-3 text-xs text-fg-muted">{u.byFeature.map((f) => `${f.feature.replace(/_/g, " ")}: ${f.requests}`).join(" · ")}</p>}
+      </SectionCard>
+    </div>
+  );
+}
+
 // --- Maintenance ------------------------------------------------------------------------------
 
 function MaintenanceForm({ c }: { c: SystemConfigResponse }) {
@@ -430,6 +494,7 @@ export const SECTIONS: Record<string, { title: string; description: string; rend
   notification: { title: "Notification setting", description: "How platform emails are sent and how they look.", render: (c) => <NotificationForm c={c} />, wide: true },
   seo: { title: "SEO configuration", description: "Injected into every page served by the app.", render: (c) => <SeoForm c={c} /> },
   frontend: { title: "Manage frontend", description: "Content of the public sign-in and sign-up pages.", render: (c) => <FrontendForm c={c} /> },
+  "ai-assistant": { title: "AI assistant", description: "Claude-powered drafting, reply suggestions and summaries.", render: (c) => <AiAssistantForm c={c} /> },
   "social-login": { title: "Social login setting", description: "Single sign-on with Google and Microsoft.", render: (c) => <SocialLoginForm c={c} /> },
   maintenance: { title: "Maintenance mode", description: "Temporarily take the app offline for tenants.", render: (c) => <MaintenanceForm c={c} /> },
   "gdpr-cookie": { title: "GDPR cookie", description: "Cookie consent for visitors.", render: (c) => <GdprForm c={c} /> },
