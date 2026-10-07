@@ -21,7 +21,7 @@ const PLANS = [
     monthlyPrice: "0.00",
     annualPrice: "0.00",
     permissions: { channel: 1, contacts: 500, team: 1, campaign: 5 },
-    features: ["1 WhatsApp number", "500 contacts", "Shared team inbox", "Basic campaigns"],
+    features: ["WhatsApp, email & SMS campaigns", "1 WhatsApp number", "500 contacts", "Shared team inbox"],
   },
   {
     name: "Pro",
@@ -30,7 +30,7 @@ const PLANS = [
     annualPrice: "490.00",
     popular: true,
     permissions: { channel: 3, contacts: 25000, team: 10, campaign: -1 },
-    features: ["3 WhatsApp numbers", "25,000 contacts", "10 team members", "Unlimited campaigns"],
+    features: ["Unlimited WhatsApp, email & SMS campaigns", "3 WhatsApp numbers", "25,000 contacts", "10 team members"],
   },
   {
     name: "Enterprise",

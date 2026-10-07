@@ -8,12 +8,13 @@ import { useAuth } from "@/contexts/auth";
 import { useChannel } from "@/contexts/channel";
 import { apiRequest, queryClient } from "@/lib/api";
 import { cn, formatDate, formatNumber } from "@/lib/utils";
-import { PageContainer } from "@/components/layout/app-layout";
+import { ChannelShell } from "@/components/channel-shell";
+import { useOpenFromQuery } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
-import { Badge, Card, CardHeader, EmptyState, ErrorState, PageHeader, ProgressBar, Spinner, StatCard, StatusBadge } from "@/components/ui/display";
+import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Spinner, StatCard, StatusBadge } from "@/components/ui/display";
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
-import { Dialog, Tabs, useConfirm, useToast } from "@/components/ui/overlay";
+import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 import { AudiencePicker, insertAtCursor, MergeTagButtons, type AudienceValue } from "@/components/marketing";
 
 type Campaign = Omit<SmsCampaign, "csvData"> & { csvCount: number };
@@ -449,40 +450,20 @@ function GatewayTab() {
   );
 }
 
-interface Analytics {
-  campaigns: number;
-  sent: number;
-  delivered: number;
-  failed: number;
-  credits: number;
-  deliveryRate: number;
-}
-
-export default function SmsMarketingPage() {
+export default function SmsMarketingPage({ params }: { params: { tab?: string } }) {
   const { can } = useAuth();
-  const [tab, setTab] = useState<"campaigns" | "gateway">("campaigns");
+  const tab = params.tab === "settings" ? "settings" : "campaigns";
   const [composer, setComposer] = useState<{ open: boolean; editing: Campaign | null }>({ open: false, editing: null });
-  const a = useQuery<{ data: Analytics }>({ queryKey: ["/api/sms-marketing/analytics"], refetchInterval: 15_000 });
-  const s = a.data?.data;
+  useOpenFromQuery(() => setComposer({ open: true, editing: null }), can("sms:send"));
 
   return (
-    <PageContainer wide>
-      <PageHeader
-        title="SMS marketing"
-        description="Text-message campaigns through Twilio or Vonage, with delivery receipts."
-        actions={can("sms:send") && <Button onClick={() => setComposer({ open: true, editing: null })}><Plus className="h-4 w-4" /> New campaign</Button>}
-      />
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Campaigns (30 days)" value={formatNumber(s?.campaigns)} />
-        <StatCard label="Messages sent" value={formatNumber(s?.sent)} />
-        <StatCard label="Delivery rate" value={`${s?.deliveryRate ?? 0}%`} hint={`${formatNumber(s?.delivered)} delivered · ${formatNumber(s?.failed)} failed`} />
-        <StatCard label="Credits used" value={formatNumber(s?.credits)} />
-      </div>
-      <div className="mb-4">
-        <Tabs value={tab} onChange={setTab} tabs={[{ value: "campaigns", label: "Campaigns" }, { value: "gateway", label: "Gateway" }]} />
-      </div>
-      {tab === "gateway" ? <GatewayTab /> : <Card><CampaignsTab onEdit={(c) => setComposer({ open: true, editing: c })} /></Card>}
+    <ChannelShell
+      channel="sms"
+      description="Text-message campaigns through Twilio or Vonage, with delivery receipts."
+      actions={can("sms:send") && <Button onClick={() => setComposer({ open: true, editing: null })}><Plus className="h-4 w-4" /> New campaign</Button>}
+    >
+      {tab === "settings" ? <GatewayTab /> : <Card><CampaignsTab onEdit={(c) => setComposer({ open: true, editing: c })} /></Card>}
       <Composer open={composer.open} editing={composer.editing} onClose={() => setComposer({ open: false, editing: null })} />
-    </PageContainer>
+    </ChannelShell>
   );
 }

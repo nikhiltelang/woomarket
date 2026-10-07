@@ -76,6 +76,10 @@ templates, personalisation, scheduling, open tracking, RFC 8058 one-click unsubs
 pause/resume/cancel), **SMS marketing** (Twilio, Vonage or simulator; GSM-7/UCS-2 segment and
 credit calculation, signed delivery-receipt webhooks), plans & subscription limits, dashboards, in-app updater.
 
+**Equal channels:** WhatsApp, email and SMS are peers in the tenant UI — one sidebar group with the
+same sections each (campaigns, templates, settings), a shared channel page header with the same four
+metrics, and a tenant-wide dashboard (`GET /api/dashboard/overview`) comparing the three side by side.
+
 **Superadmin panel:** dashboard (user segments, messaging/marketing totals, daily messages and sign-ups
 reports, sign-ins by browser/OS, server health); Manage users (active, banned, email/mobile unverified,
 with subscription, all; ban with reason, verification toggles, plan and level assignment); Send

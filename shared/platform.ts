@@ -248,6 +248,10 @@ export interface PublicConfig {
 /** English base strings; languages override any subset of these keys. */
 export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.workspace": "Workspace",
+  "nav.overview": "Overview",
+  "nav.audience": "Audience",
+  "nav.whatsappMarketing": "WhatsApp marketing",
+  "nav.channelSettings": "Settings",
   "nav.dashboard": "Dashboard",
   "nav.inbox": "Inbox",
   "nav.contacts": "Contacts",

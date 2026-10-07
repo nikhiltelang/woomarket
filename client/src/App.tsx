@@ -58,15 +58,15 @@ interface RouteDef {
 }
 
 const routes: RouteDef[] = [
-  { path: "/dashboard", component: Dashboard, roles: TENANT, channel: true },
+  { path: "/dashboard", component: Dashboard, roles: TENANT },
   { path: "/inbox", component: Inbox, roles: TENANT, permission: "inbox:view", channel: true },
   { path: "/contacts", component: Contacts, roles: TENANT, permission: "contacts:view", channel: true },
   { path: "/groups", component: Groups, roles: TENANT, permission: "contacts:view", channel: true },
   { path: "/templates", component: Templates, roles: TENANT, permission: "templates:view", channel: true },
   { path: "/campaigns", component: Campaigns, roles: TENANT, permission: "campaigns:view", channel: true },
   { path: "/analytics/campaign/:campaignId", component: CampaignAnalytics, roles: TENANT, permission: "campaigns:view" },
-  { path: "/email-marketing", component: EmailMarketing, roles: TENANT, permission: "email:view", channel: true },
-  { path: "/sms-marketing", component: SmsMarketing, roles: TENANT, permission: "sms:view", channel: true },
+  { path: "/email-marketing/:tab", component: EmailMarketing, roles: TENANT, permission: "email:view", channel: true },
+  { path: "/sms-marketing/:tab", component: SmsMarketing, roles: TENANT, permission: "sms:view", channel: true },
   { path: "/settings", component: Settings, roles: TENANT, permission: "settings:view" },
   { path: "/team", component: Team, roles: TENANT, permission: "team:view" },
   { path: "/plans", component: Plans, roles: TENANT },
@@ -111,6 +111,12 @@ function Authenticated() {
               </Route>
               <Route path="/users">
                 <Redirect to="/users/all" />
+              </Route>
+              <Route path="/email-marketing">
+                <Redirect to={`/email-marketing/campaigns${location.search}`} />
+              </Route>
+              <Route path="/sms-marketing">
+                <Redirect to={`/sms-marketing/campaigns${location.search}`} />
               </Route>
               {routes.map(({ path, component: C, roles, permission, channel }) => (
                 <Route key={path} path={path}>

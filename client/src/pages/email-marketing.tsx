@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Eye, Mail, MailOpen, Pause, Pencil, Play, Plus, Send, Trash2, XCircle } from "lucide-react";
 import type { EmailCampaign, EmailRecipient, EmailTemplate } from "@shared/schema";
@@ -8,12 +8,13 @@ import { useAuth } from "@/contexts/auth";
 import { useChannel } from "@/contexts/channel";
 import { apiRequest, queryClient } from "@/lib/api";
 import { cn, formatDate, formatNumber } from "@/lib/utils";
-import { PageContainer } from "@/components/layout/app-layout";
+import { ChannelShell } from "@/components/channel-shell";
+import { useOpenFromQuery } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
-import { Badge, Card, CardHeader, EmptyState, ErrorState, PageHeader, ProgressBar, Spinner, StatCard, StatusBadge } from "@/components/ui/display";
+import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Spinner, StatCard, StatusBadge } from "@/components/ui/display";
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
-import { Dialog, Tabs, useConfirm, useToast } from "@/components/ui/overlay";
+import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 import { AudiencePicker, insertAtCursor, MergeTagButtons, type AudienceValue } from "@/components/marketing";
 import { SmtpSettings } from "@/components/smtp-settings";
 
@@ -560,44 +561,20 @@ function TemplatesTab({ onUse }: { onUse: (t: EmailTemplate) => void }) {
   );
 }
 
-interface Analytics {
-  campaigns: number;
-  recipients: number;
-  delivered: number;
-  opened: number;
-  failed: number;
-  openRate: number;
-}
+type EmailTab = "campaigns" | "templates" | "settings";
 
-export default function EmailMarketingPage() {
+export default function EmailMarketingPage({ params }: { params: { tab?: string } }) {
   const { can, user } = useAuth();
-  const [tab, setTab] = useState<"campaigns" | "templates" | "settings">("campaigns");
+  const tab: EmailTab = params.tab === "templates" || params.tab === "settings" ? params.tab : "campaigns";
   const [composer, setComposer] = useState<{ open: boolean; editing: Campaign | null; seed: EmailTemplate | null }>({ open: false, editing: null, seed: null });
-  const a = useQuery<{ data: Analytics }>({ queryKey: ["/api/email-marketing/analytics"], refetchInterval: 15_000 });
-  const stats = a.data?.data;
-  const tabs = useMemo(
-    () => [
-      { value: "campaigns" as const, label: "Campaigns" },
-      { value: "templates" as const, label: "Templates" },
-      { value: "settings" as const, label: "Settings" },
-    ],
-    [],
-  );
+  useOpenFromQuery(() => setComposer({ open: true, editing: null, seed: null }), can("email:send"));
 
   return (
-    <PageContainer wide>
-      <PageHeader
-        title="Email marketing"
-        description="Newsletters and promotions to your contacts, with open tracking and one-click unsubscribe."
-        actions={can("email:send") && <Button onClick={() => setComposer({ open: true, editing: null, seed: null })}><Plus className="h-4 w-4" /> New campaign</Button>}
-      />
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Campaigns (30 days)" value={formatNumber(stats?.campaigns)} />
-        <StatCard label="Emails delivered" value={formatNumber(stats?.delivered)} hint={`${formatNumber(stats?.recipients)} recipients`} />
-        <StatCard label="Open rate" value={`${stats?.openRate ?? 0}%`} hint={`${formatNumber(stats?.opened)} unique opens`} />
-        <StatCard label="Failed" value={formatNumber(stats?.failed)} />
-      </div>
-      <div className="mb-4"><Tabs value={tab} onChange={setTab} tabs={tabs} /></div>
+    <ChannelShell
+      channel="email"
+      description="Newsletters and promotions with open tracking and one-click unsubscribe."
+      actions={can("email:send") && <Button onClick={() => setComposer({ open: true, editing: null, seed: null })}><Plus className="h-4 w-4" /> New campaign</Button>}
+    >
       {tab === "settings" ? (
         <SmtpSettings canEdit={user?.role === "admin" && can("settings:edit")} />
       ) : (
@@ -610,6 +587,6 @@ export default function EmailMarketingPage() {
         </Card>
       )}
       <Composer open={composer.open} editing={composer.editing} seed={composer.seed} onClose={() => setComposer({ open: false, editing: null, seed: null })} />
-    </PageContainer>
+    </ChannelShell>
   );
 }

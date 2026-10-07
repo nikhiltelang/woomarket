@@ -39,12 +39,16 @@ export const systemConfigRepository = {
   },
 };
 
+export const DEFAULT_TAGLINE = "WhatsApp, email and SMS marketing for your whole team";
+/** Earlier releases' default, replaced on boot only while nobody has edited it. */
+export const LEGACY_TAGLINE = "WhatsApp marketing, CRM and team inbox";
+
 export const panelRepository = {
   async get(): Promise<PanelConfig> {
     const [row] = await db.select().from(panelConfig).orderBy(asc(panelConfig.createdAt)).limit(1);
     if (row) return row;
     const id = randomUUID();
-    await db.insert(panelConfig).values({ id, name: config.APP_NAME, tagline: "WhatsApp marketing, CRM and team inbox" });
+    await db.insert(panelConfig).values({ id, name: config.APP_NAME, tagline: DEFAULT_TAGLINE });
     return (await db.select().from(panelConfig).where(eq(panelConfig.id, id)))[0];
   },
   async update(patch: Partial<typeof panelConfig.$inferInsert>): Promise<PanelConfig> {

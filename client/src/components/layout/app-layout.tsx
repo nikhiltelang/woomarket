@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronsUpDown,
   CreditCard,
-  FileText,
   Bug,
   LayoutGrid,
   ScrollText,
@@ -16,11 +15,9 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
-  Megaphone,
+  MessageCircle,
   Menu,
-  MessageSquare,
   MessageSquareText,
-  Settings,
   Shield,
   SlidersHorizontal,
   UserCircle,
@@ -114,30 +111,59 @@ function useNav(): { title: string; items: NavItem[] }[] {
       },
     ];
   }
+  // WhatsApp, email and SMS are peers: same position, same shape (campaigns, content, settings).
   return [
     {
-      title: t("nav.workspace"),
+      title: t("nav.overview"),
+      items: [{ href: "/dashboard", label: t("nav.dashboard"), icon: <LayoutDashboard className="h-4 w-4" /> }],
+    },
+    {
+      title: t("nav.audience"),
       items: [
-        { href: "/dashboard", label: t("nav.dashboard"), icon: <LayoutDashboard className="h-4 w-4" /> },
-        { href: "/inbox", label: t("nav.inbox"), icon: <MessageSquare className="h-4 w-4" />, permission: "inbox:view", badge: unread?.count },
         { href: "/contacts", label: t("nav.contacts"), icon: <Users className="h-4 w-4" />, permission: "contacts:view" },
         { href: "/groups", label: t("nav.groups"), icon: <UsersRound className="h-4 w-4" />, permission: "contacts:view" },
-        { href: "/templates", label: t("nav.templates"), icon: <FileText className="h-4 w-4" />, permission: "templates:view" },
-        { href: "/campaigns", label: t("nav.campaigns"), icon: <Megaphone className="h-4 w-4" />, permission: "campaigns:view" },
       ],
     },
     {
       title: t("nav.marketing"),
       items: [
-        { href: "/email-marketing", label: t("nav.emailMarketing"), icon: <Mail className="h-4 w-4" />, permission: "email:view" },
-        { href: "/sms-marketing", label: t("nav.smsMarketing"), icon: <MessageSquareText className="h-4 w-4" />, permission: "sms:view" },
+        {
+          href: "/whatsapp",
+          label: t("nav.whatsappMarketing"),
+          icon: <MessageCircle className="h-4 w-4" />,
+          badge: unread?.count,
+          children: [
+            { href: "/campaigns", label: t("nav.campaigns"), permission: "campaigns:view" },
+            { href: "/templates", label: t("nav.templates"), permission: "templates:view" },
+            { href: "/inbox", label: t("nav.inbox"), permission: "inbox:view", badge: unread?.count },
+            { href: "/settings", label: t("nav.channelSettings"), permission: "settings:view" },
+          ],
+        },
+        {
+          href: "/email-marketing",
+          label: t("nav.emailMarketing"),
+          icon: <Mail className="h-4 w-4" />,
+          children: [
+            { href: "/email-marketing/campaigns", label: t("nav.campaigns"), permission: "email:view" },
+            { href: "/email-marketing/templates", label: t("nav.templates"), permission: "email:view" },
+            { href: "/email-marketing/settings", label: t("nav.channelSettings"), permission: "email:view" },
+          ],
+        },
+        {
+          href: "/sms-marketing",
+          label: t("nav.smsMarketing"),
+          icon: <MessageSquareText className="h-4 w-4" />,
+          children: [
+            { href: "/sms-marketing/campaigns", label: t("nav.campaigns"), permission: "sms:view" },
+            { href: "/sms-marketing/settings", label: t("nav.channelSettings"), permission: "sms:view" },
+          ],
+        },
       ],
     },
     {
       title: t("nav.account"),
       items: [
         { href: "/team", label: t("nav.team"), icon: <Shield className="h-4 w-4" />, permission: "team:view" },
-        { href: "/settings", label: t("nav.whatsappNumbers"), icon: <Settings className="h-4 w-4" />, permission: "settings:view" },
         { href: "/plans", label: t("nav.plan"), icon: <BarChart3 className="h-4 w-4" /> },
         { href: "/support", label: t("nav.reportRequest"), icon: <Bug className="h-4 w-4" /> },
       ],
@@ -290,7 +316,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <ul className="flex flex-col gap-0.5">
               {items.map((i) => {
                 if (i.children) {
-                  const isOpen = expanded[i.href] ?? isActive(i.href);
+                  const children = i.children.filter((c) => !c.permission || can(c.permission));
+                  if (!children.length) return null;
+                  const childActive = children.some((c) => isActive(c.href));
+                  const isOpen = expanded[i.href] ?? (isActive(i.href) || childActive);
                   return (
                     <li key={i.href}>
                       <button
@@ -298,24 +327,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
                         aria-expanded={isOpen}
                         className={cn(
                           "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
-                          isActive(i.href) ? "font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
+                          isActive(i.href) || childActive ? "font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
                         )}
                       >
                         {i.icon}
                         <span className="flex-1 text-left">{i.label}</span>
+                        {!isOpen && badge(i.badge, i.badgeTone)}
                         <ChevronDown className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")} />
                       </button>
                       {isOpen && (
                         <ul className="mt-0.5 ml-4 flex flex-col gap-0.5 border-l border-border pl-3">
-                          {i.children.map((c) => (
+                          {children.map((c) => (
                             <li key={c.href}>
                               <Link
                                 href={c.href}
                                 onClick={() => setOpen(false)}
-                                aria-current={location === c.href ? "page" : undefined}
+                                aria-current={isActive(c.href) ? "page" : undefined}
                                 className={cn(
                                   "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                                  location === c.href ? "bg-primary-soft font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
+                                  isActive(c.href) ? "bg-primary-soft font-medium text-primary" : "text-fg-muted hover:bg-subtle hover:text-fg",
                                 )}
                               >
                                 <span className="flex-1">{c.label}</span>

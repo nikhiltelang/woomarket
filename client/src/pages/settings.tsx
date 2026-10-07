@@ -6,10 +6,10 @@ import { useAuth } from "@/contexts/auth";
 import { useChannel } from "@/contexts/channel";
 import { apiRequest, queryClient } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { PageContainer } from "@/components/layout/app-layout";
+import { ChannelShell } from "@/components/channel-shell";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
-import { Badge, Card, CardHeader, EmptyState, PageHeader, PageLoader, StatusBadge } from "@/components/ui/display";
+import { Badge, Card, CardHeader, EmptyState, PageLoader, StatusBadge } from "@/components/ui/display";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 
 function AddChannelDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -170,19 +170,18 @@ export default function SettingsPage() {
   const channels = data?.data ?? [];
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="WhatsApp numbers"
-        description="Connect and monitor the WhatsApp Business numbers your team works on."
-        actions={
-          can("settings:edit") &&
-          user?.role === "admin" && (
-            <Button onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" /> Connect number
-            </Button>
-          )
-        }
-      />
+    <ChannelShell
+      channel="whatsapp"
+      description="Connect and monitor the WhatsApp Business numbers your team sends from."
+      actions={
+        can("settings:edit") &&
+        user?.role === "admin" && (
+          <Button onClick={() => setAdding(true)}>
+            <Plus className="h-4 w-4" /> Connect number
+          </Button>
+        )
+      }
+    >
       {channels.length === 0 ? (
         <Card>
           <EmptyState icon={<Phone className="h-10 w-10" />} title="No numbers connected" description="Connect a WhatsApp Cloud API number, or start with the simulator to try everything out." />
@@ -285,6 +284,6 @@ export default function SettingsPage() {
 
       <AddChannelDialog open={adding} onClose={() => setAdding(false)} />
       <SimulateDialog channel={simulating} onClose={() => setSimulating(null)} />
-    </PageContainer>
+    </ChannelShell>
   );
 }

@@ -24,8 +24,8 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
           <span className="text-lg font-semibold">{config?.siteTitle ?? "WooMarket360"}</span>
         </div>
         <div>
-          <h2 className="text-3xl leading-tight font-semibold">{f.heroTitle || "Turn WhatsApp into your best sales channel"}</h2>
-          <p className="mt-3 text-base opacity-85">{f.heroSubtitle || config?.tagline || "Shared inbox, campaigns and automation for your whole team."}</p>
+          <h2 className="text-3xl leading-tight font-semibold">{f.heroTitle || "Reach every customer on WhatsApp, email and SMS"}</h2>
+          <p className="mt-3 text-base opacity-85">{f.heroSubtitle || config?.tagline || "Campaigns, templates and delivery tracking for every channel, plus a shared WhatsApp inbox for your team."}</p>
           {!!f.features?.length && (
             <ul className="mt-8 space-y-3">
               {f.features.map((x) => (

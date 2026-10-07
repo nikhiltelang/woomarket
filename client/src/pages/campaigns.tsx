@@ -8,10 +8,11 @@ import { useChannel } from "@/contexts/channel";
 import { useAuth } from "@/contexts/auth";
 import { apiRequest, queryClient } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/utils";
-import { PageContainer } from "@/components/layout/app-layout";
+import { ChannelShell } from "@/components/channel-shell";
+import { useOpenFromQuery } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
-import { Card, EmptyState, ErrorState, PageHeader, ProgressBar, Spinner, StatusBadge } from "@/components/ui/display";
+import { Card, EmptyState, ErrorState, ProgressBar, Spinner, StatusBadge } from "@/components/ui/display";
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 import { TemplatePreview } from "./templates";
@@ -244,20 +245,20 @@ export default function CampaignsPage() {
   });
 
   const rows = useMemo(() => data?.data ?? [], [data]);
+  useOpenFromQuery(() => setOpen(true), can("campaigns:create"));
 
   return (
-    <PageContainer wide>
-      <PageHeader
-        title="Campaigns"
-        description="Bulk template messages with delivery tracking."
-        actions={
-          can("campaigns:create") && (
-            <Button onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" /> New campaign
-            </Button>
-          )
-        }
-      />
+    <ChannelShell
+      channel="whatsapp"
+      description="Broadcast approved templates to your contacts, with delivery and read tracking."
+      actions={
+        can("campaigns:create") && (
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4" /> New campaign
+          </Button>
+        )
+      }
+    >
       <Card>
         {error ? (
           <ErrorState error={error} onRetry={() => refetch()} />
@@ -364,6 +365,6 @@ export default function CampaignsPage() {
         )}
       </Card>
       <NewCampaignDialog open={open} onClose={() => setOpen(false)} />
-    </PageContainer>
+    </ChannelShell>
   );
 }

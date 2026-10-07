@@ -11,10 +11,10 @@ import { useAuth } from "@/contexts/auth";
 import { useSocketEvent } from "@/contexts/socket";
 import { apiRequest, queryClient } from "@/lib/api";
 import { formatDay, formatNumber } from "@/lib/utils";
-import { PageContainer } from "@/components/layout/app-layout";
+import { ChannelShell } from "@/components/channel-shell";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
-import { Badge, Card, EmptyState, PageHeader, PageLoader, StatusBadge } from "@/components/ui/display";
+import { Badge, Card, EmptyState, PageLoader, StatusBadge } from "@/components/ui/display";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 
@@ -227,11 +227,10 @@ export default function TemplatesPage() {
   const rows = data?.data ?? [];
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Message templates"
-        description="Pre-approved messages for campaigns and for starting conversations."
-        actions={
+    <ChannelShell
+      channel="whatsapp"
+      description="Meta-approved message templates for campaigns and for starting conversations."
+      actions={
           <>
             {can("templates:sync") && (
               <Button variant="outline" onClick={() => sync.mutate()} loading={sync.isPending}>
@@ -250,7 +249,7 @@ export default function TemplatesPage() {
             )}
           </>
         }
-      />
+    >
       <Card>
         {rows.length === 0 ? (
           <EmptyState icon={<FileText className="h-10 w-10" />} title="No templates yet" description="Create a template or sync existing ones from your WhatsApp Business account." />
@@ -326,6 +325,6 @@ export default function TemplatesPage() {
       <Dialog open={Boolean(preview)} onClose={() => setPreview(null)} title={preview?.name} description={preview ? `${preview.category} · ${preview.language}` : undefined}>
         {preview && <TemplatePreview header={preview.header} body={preview.body} footer={preview.footer} buttons={preview.buttons ?? []} />}
       </Dialog>
-    </PageContainer>
+    </ChannelShell>
   );
 }

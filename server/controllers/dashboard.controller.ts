@@ -13,6 +13,11 @@ import { pool } from "../db";
 import { realtime } from "../services/realtime";
 import { runStore } from "../app-update/run-store";
 import { getRoot, readVersion } from "../app-update/controller";
+import { hasPermission } from "@shared/roles";
+import { requireTenantId } from "../middlewares/tenant";
+import { overviewRepository } from "../repositories/overview.repository";
+import { smsGatewayRepository } from "../repositories/sms.repository";
+import { resolveSmtp } from "../services/email/mailer";
 
 /** Tenant dashboard for one channel. */
 export async function channelStats(req: Request, res: Response) {
@@ -148,4 +153,93 @@ export async function serverInfo(_req: Request, res: Response) {
 
 export function onlineAgents(_req: Request, res: Response) {
   res.json({ data: realtime.onlineUserIds() });
+}
+
+// ---------------------------------------------------------------------------
+// Tenant marketing overview: WhatsApp, email and SMS reported side by side.
+// ---------------------------------------------------------------------------
+
+const OVERVIEW_DAYS = 30;
+const CHART_DAYS = 14;
+
+interface ChannelStatus {
+  ready: boolean;
+  /** Short status line, e.g. "2 numbers connected" or "Test mode (simulator)". */
+  detail: string;
+}
+
+async function whatsappStatus(channels: { isActive: boolean | null }[]): Promise<ChannelStatus> {
+  const active = channels.filter((c) => c.isActive !== false).length;
+  return active ? { ready: true, detail: `${active} number${active === 1 ? "" : "s"} connected` } : { ready: false, detail: "No number connected" };
+}
+
+async function emailStatus(tenantId: string): Promise<ChannelStatus> {
+  try {
+    const smtp = await resolveSmtp(tenantId);
+    if (smtp.source === "simulator") return { ready: true, detail: "Test mode (simulator)" };
+    return { ready: true, detail: smtp.source === "tenant" ? `Sending via ${smtp.host}` : "Sending via platform SMTP" };
+  } catch {
+    return { ready: false, detail: "No SMTP server set up" };
+  }
+}
+
+async function smsStatus(tenantId: string): Promise<ChannelStatus> {
+  const g = await smsGatewayRepository.get(tenantId);
+  if (!g || g.isActive === false) return { ready: false, detail: "No SMS gateway set up" };
+  const name = g.provider === "simulator" ? "Test mode (simulator)" : `Sending via ${g.provider.charAt(0).toUpperCase()}${g.provider.slice(1)}`;
+  return { ready: true, detail: name };
+}
+
+const rate = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 10 : 0);
+
+/** GET /api/dashboard/overview — tenant-wide, last 30 days; channels the caller can't view are left out. */
+export async function marketingOverview(req: Request, res: Response) {
+  const user = req.user!;
+  const tenantId = requireTenantId(user);
+  const can = (...p: string[]) => hasPermission(user.permissions, ...p);
+  const include = { whatsapp: can("campaigns:view", "inbox:view"), email: can("email:view"), sms: can("sms:view") };
+  const channels = await channelsRepository.listByTenant(tenantId);
+  const channelIds = channels.map((c) => c.id);
+  const since = new Date(Date.now() - OVERVIEW_DAYS * 86_400_000);
+  const chartSince = new Date(Date.now() - (CHART_DAYS - 1) * 86_400_000);
+  chartSince.setUTCHours(0, 0, 0, 0);
+
+  const [wa, email, sms, perDay, audience, recent, open, unread, waStatus, emStatus, smStatus] = await Promise.all([
+    include.whatsapp ? overviewRepository.whatsappTotals(channelIds, since) : null,
+    include.email ? overviewRepository.emailTotals(tenantId, since) : null,
+    include.sms ? overviewRepository.smsTotals(tenantId, since) : null,
+    overviewRepository.sentPerDay(tenantId, channelIds, chartSince),
+    can("contacts:view") ? overviewRepository.audience(channelIds) : null,
+    overviewRepository.recentCampaigns(tenantId, channelIds, include),
+    include.whatsapp && can("inbox:view") ? Promise.all(channelIds.map((id) => conversationsRepository.countOpen(id))).then((n) => n.reduce((a, b) => a + b, 0)) : 0,
+    include.whatsapp && can("inbox:view") && channelIds.length ? conversationsRepository.unreadCountForChannels(channelIds) : 0,
+    whatsappStatus(channels),
+    emailStatus(tenantId),
+    smsStatus(tenantId),
+  ]);
+
+  const daily = Array.from({ length: CHART_DAYS }, (_, i) => {
+    const day = new Date(chartSince.getTime() + i * 86_400_000).toISOString().slice(0, 10);
+    return {
+      day,
+      ...(include.whatsapp ? { whatsapp: perDay.whatsapp.get(day) ?? 0 } : {}),
+      ...(include.email ? { email: perDay.email.get(day) ?? 0 } : {}),
+      ...(include.sms ? { sms: perDay.sms.get(day) ?? 0 } : {}),
+    };
+  });
+
+  res.json({
+    data: {
+      days: OVERVIEW_DAYS,
+      chartDays: CHART_DAYS,
+      audience,
+      channels: {
+        ...(wa && { whatsapp: { ...waStatus, ...wa, deliveryRate: rate(wa.delivered, wa.sent), engagementRate: rate(wa.engaged, wa.delivered), openConversations: open, unreadMessages: unread } }),
+        ...(email && { email: { ...emStatus, ...email, deliveryRate: rate(email.delivered, email.sent), engagementRate: rate(email.engaged, email.delivered) } }),
+        ...(sms && { sms: { ...smStatus, ...sms, deliveryRate: rate(sms.delivered, sms.sent), engagementRate: null } }),
+      },
+      daily,
+      recentCampaigns: recent,
+    },
+  });
 }
