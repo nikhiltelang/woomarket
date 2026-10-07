@@ -20,7 +20,7 @@ async function audienceContacts(a: Audience, extra: SQL[]) {
   const conds: SQL[] = [eq(contacts.channelId, a.channelId), eq(contacts.status, "active"), ...extra];
   if (a.targetAudience === "group" && a.targetGroupId) conds.push(sql`JSON_CONTAINS(${contacts.groups}, JSON_QUOTE(${a.targetGroupId}))`);
   return db
-    .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone })
+    .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone, metadata: contacts.metadata })
     .from(contacts)
     .where(and(...conds));
 }
@@ -32,7 +32,7 @@ async function audienceContacts(a: Audience, extra: SQL[]) {
 export async function resolveEmailAudience(c: EmailCampaign) {
   const rows =
     c.targetAudience === "csv"
-      ? (c.csvData ?? []).map((r) => ({ contactId: null as string | null, email: r.email, name: r.name ?? null }))
+      ? (c.csvData ?? []).map((r) => ({ contactId: r.contactId ?? null, email: r.email, name: r.name ?? null }))
       : (await audienceContacts(c, [isNotNull(contacts.email), ne(contacts.email, "")])).map((r) => ({ contactId: r.id, email: r.email!, name: r.name }));
   const seen = new Set<string>();
   return rows.filter((r) => {
@@ -104,8 +104,8 @@ export async function unsubscribeEmail(token: string): Promise<{ email: string }
 export async function resolveSmsAudience(c: SmsCampaign) {
   const rows =
     c.targetAudience === "csv"
-      ? (c.csvData ?? []).map((r) => ({ contactId: null as string | null, phone: r.phone, name: r.name ?? null, email: null as string | null }))
-      : (await audienceContacts(c, [])).map((r) => ({ contactId: r.id, phone: r.phone, name: r.name, email: r.email }));
+      ? (c.csvData ?? []).map((r) => ({ contactId: r.contactId ?? null, phone: r.phone, name: r.name ?? null, email: null as string | null, fields: {} as Record<string, string> }))
+      : (await audienceContacts(c, [])).map((r) => ({ contactId: r.id, phone: r.phone, name: r.name, email: r.email, fields: r.metadata ?? {} }));
   const seen = new Set<string>();
   return rows.filter((r) => !seen.has(r.phone) && seen.add(r.phone));
 }

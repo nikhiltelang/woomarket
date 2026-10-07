@@ -38,7 +38,7 @@ const makeKey = (o: Partial<ApiKey> = {}): ApiKey => ({
 
 const body = { channel: "email", subject: "Order shipped", html: "<p>Hi {{name}}</p>", recipients: ["ada@example.test", { email: "grace@example.test", name: "Grace" }] };
 const basic = (id: string, secret: string) => `Basic ${Buffer.from(`${id}:${secret}`).toString("base64")}`;
-const okResult = { id: "c1", channel: "email" as const, name: "API", status: "sending", scheduledAt: null, testMode: true, recipients: { requested: 2, accepted: 2, rejected: [] } };
+const okResult = { id: "c1", channel: "email" as const, name: "API", status: "sending", scheduledAt: null, testMode: true, recipients: { requested: 2, accepted: 2, rejected: [] }, groups: [] };
 
 function signed(key: ApiKey, payload: unknown, opts: { ts?: number; secret?: string; path?: string } = {}) {
   const raw = JSON.stringify(payload);
@@ -172,5 +172,32 @@ describe("key management", () => {
     const s = await login(app, "k_agent");
     await s.agent.get("/api/api-keys").expect(403);
     await s.agent.post("/api/api-keys").set("X-CSRF-Token", s.csrf).send({ name: "x", channels: ["sms"] }).expect(403);
+  });
+});
+
+describe("groups", () => {
+  const g = (id: string, name: string, channelId: string | null = null) => ({ id, name, channelId, description: null, createdBy: admin.id, createdAt: new Date() });
+
+  it("accepts groups instead of recipients, but needs one or the other", () => {
+    expect(apiSendSchema.safeParse({ channel: "sms", message: "Hi", groups: ["VIP"] }).success).toBe(true);
+    const none = apiSendSchema.safeParse({ channel: "sms", message: "Hi" });
+    expect(none.success).toBe(false);
+    expect(JSON.stringify(none.error?.issues)).toMatch(/recipients, groups, or both/);
+    expect(apiSendSchema.safeParse({ channel: "sms", message: "Hi", groups: Array.from({ length: 21 }, (_, i) => `g${i}`) }).success).toBe(false);
+  });
+
+  it("matches groups by id or by name, case-insensitively", async () => {
+    const { groupsRepository } = await import("../repositories/groups.repository");
+    vi.spyOn(groupsRepository, "listByTenant").mockResolvedValue([g("g-1", "VIP customers"), g("g-2", "Newsletter")] as never);
+    const found = await publicApi.resolveGroups(admin.id, ["g-1", "newsletter", "VIP Customers"]);
+    expect(found.map((x) => x.id)).toEqual(["g-1", "g-2"]);
+  });
+
+  it("explains unknown and ambiguous group names", async () => {
+    const { groupsRepository } = await import("../repositories/groups.repository");
+    vi.spyOn(groupsRepository, "listByTenant").mockResolvedValue([g("g-1", "VIP", "ch-1"), g("g-2", "VIP", "ch-2")] as never);
+    await expect(publicApi.resolveGroups(admin.id, ["Nope"])).rejects.toMatchObject({ code: "GROUP_NOT_FOUND", details: { missing: ["Nope"] } });
+    await expect(publicApi.resolveGroups(admin.id, ["vip"])).rejects.toMatchObject({ code: "AMBIGUOUS_GROUP" });
+    await expect(publicApi.resolveGroups(admin.id, ["g-2"])).resolves.toHaveLength(1);
   });
 });

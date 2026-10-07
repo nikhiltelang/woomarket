@@ -76,8 +76,15 @@ templates, personalisation, scheduling, open tracking, RFC 8058 one-click unsubs
 pause/resume/cancel), **SMS marketing** (Twilio, Vonage or simulator; GSM-7/UCS-2 segment and
 credit calculation, signed delivery-receipt webhooks), plans & subscription limits, dashboards, in-app updater.
 
+**Custom contact fields:** any number of extra fields per contact (age, address, …) stored in
+`contacts.metadata` (JSON, keys normalised to snake_case). Set them in the contact form or import them —
+every CSV column besides name/phone/email/tags becomes a field, optionally merged into existing contacts.
+Export writes them back as columns. Use them as `{{field}}` merge tags in email and SMS, and as WhatsApp
+template variable sources.
+
 **Public API:** `POST /api/v1/send` sends email, SMS or WhatsApp (approved template) to up to 1,000
-recipients per call; each call becomes a campaign visible in the app. Authenticate with an Access Key ID
+listed recipients and/or whole contact groups (`groups`: ids or names, up to 20 groups, 50,000 people)
+per call; each call becomes a campaign visible in the app. Authenticate with an Access Key ID
 and Secret Access Key (Account → API keys), either as HTTP Basic or as an HMAC-SHA256 signed request
 (`X-WM-Access-Key-Id`, `X-WM-Timestamp`, `X-WM-Signature`; 5-minute window, replay-protected).
 Supports `Idempotency-Key`, `scheduleAt`, per-key channel limits, the access level's API flag, plan

@@ -44,6 +44,8 @@ export interface RenderRecipient {
   id?: string;
   name?: string | null;
   email: string;
+  /** The contact's custom fields for {{field}} tags; omitted for previews and test sends. */
+  fields?: Record<string, string>;
 }
 
 /**
@@ -54,7 +56,7 @@ export interface RenderRecipient {
 export function renderEmail(c: RenderInput, r: RenderRecipient) {
   const base = publicBaseUrl();
   const unsubscribeUrl = r.id ? `${base}/api/email-marketing/unsubscribe/${signToken("unsubscribe", r.id)}` : `${base}/api/email-marketing/unsubscribe/test`;
-  const values = { name: r.name ?? "", email: r.email };
+  const values = { name: r.name ?? "", email: r.email, fields: r.fields };
 
   let html = renderMergeTags(c.contentHtml, values, escapeHtml).replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, unsubscribeUrl);
   if (!html.includes(unsubscribeUrl)) {

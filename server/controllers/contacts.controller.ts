@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { parse as parseCsv } from "csv-parse/sync";
 import { bulkIdsSchema, contactListQuery, contactSchema, updateContactSchema } from "@shared/validation";
-import type { Contact } from "@shared/schema";
+import type { Contact, ContactFields } from "@shared/schema";
+import { contactFieldsSchema, normalizeFieldKey, RESERVED_FIELD_KEYS } from "@shared/contact-fields";
 import { paginated, parse, parseBody, parseQuery } from "../lib/http";
 import { badRequest, conflict, notFound } from "../lib/errors";
 import { contactsRepository } from "../repositories/contacts.repository";
@@ -44,6 +45,7 @@ export async function createContact(req: Request, res: Response) {
     email: input.email || null,
     groups: input.groups ?? [],
     tags: input.tags ?? [],
+    metadata: input.metadata ?? {},
     status: input.status ?? "active",
     source: "manual",
     createdBy: req.user!.id,
@@ -78,22 +80,37 @@ export async function bulkDeleteContacts(req: Request, res: Response) {
 }
 
 const IMPORT_MAX_ROWS = 50_000;
+/** Columns the importer understands; any other column becomes a custom field. */
+const STANDARD_COLUMNS = new Set(["name", "full_name", "phone", "mobile", "whatsapp", "email", "tags", "status", "source", "created_at", "updated_at", "groups", "id"]);
 
-/** CSV import: columns name, phone, email (optional), tags (optional, ; separated). */
+/**
+ * CSV import: name, phone, email (optional), tags (optional, ; separated). Every other column
+ * (age, address, …) is stored as a custom field. With updateExisting=true, contacts already on
+ * the number get the file's custom fields merged in instead of being skipped.
+ */
 export async function importContacts(req: Request, res: Response) {
   const channel = req.channel!;
   if (!req.file) throw badRequest("Attach a CSV file in the `file` field");
   let records: Record<string, string>[];
+  let headers: string[] = [];
   try {
-    records = parseCsv(req.file.buffer, { columns: (h: string[]) => h.map((c) => c.trim().toLowerCase()), skip_empty_lines: true, trim: true, bom: true });
+    records = parseCsv(req.file.buffer, {
+      columns: (h: string[]) => (headers = h.map((c) => c.trim())).map((c) => c.toLowerCase()),
+      skip_empty_lines: true,
+      trim: true,
+      bom: true,
+    });
   } catch (err) {
     throw badRequest(`Could not read CSV: ${(err as Error).message}`);
   }
   if (records.length > IMPORT_MAX_ROWS) throw badRequest(`A single import is limited to ${IMPORT_MAX_ROWS} rows`);
   const groupId = typeof req.body.groupId === "string" && req.body.groupId ? req.body.groupId : null;
+  const updateExisting = req.body.updateExisting === "true";
+  // Custom field columns, keyed by their lower-cased header; the original header names the field.
+  const fieldColumns = headers.filter((h) => !STANDARD_COLUMNS.has(h.toLowerCase()) && normalizeFieldKey(h) && !RESERVED_FIELD_KEYS.has(normalizeFieldKey(h)));
 
   const errors: { row: number; message: string }[] = [];
-  const valid: { name: string; phone: string; email: string | null; tags: string[] }[] = [];
+  const valid: { name: string; phone: string; email: string | null; tags: string[]; metadata: ContactFields }[] = [];
   const seen = new Set<string>();
   let inFileDuplicates = 0;
   records.forEach((raw, i) => {
@@ -105,19 +122,23 @@ export async function importContacts(req: Request, res: Response) {
         phone: r.phone || r.mobile || r.whatsapp || "",
         email: r.email || null,
         tags: r.tags ? r.tags.split(/[;|]/).map((t) => t.trim()).filter(Boolean) : [],
+        metadata: Object.fromEntries(fieldColumns.map((h) => [h, r[h.toLowerCase()] ?? ""])),
       });
       if (seen.has(c.phone)) {
         inFileDuplicates++;
         return;
       }
       seen.add(c.phone);
-      valid.push({ name: c.name, phone: c.phone, email: c.email || null, tags: c.tags ?? [] });
+      valid.push({ name: c.name, phone: c.phone, email: c.email || null, tags: c.tags ?? [], metadata: c.metadata ?? {} });
     } catch (err) {
       if (errors.length < 100) errors.push({ row: i + 2, message: (err as Error).message.replace(/^Validation failed — /, "") });
     }
   });
 
   if (req.user!.tenantId && valid.length) await assertWithinPlan(req.user!.tenantId, "contacts", valid.length);
+  // Contacts already on the number (found before inserting) are the ones whose fields may be merged.
+  const withFields = valid.filter((c) => Object.keys(c.metadata).length);
+  const existing = updateExisting && withFields.length ? await contactsRepository.existingPhones(channel.id, withFields.map((c) => c.phone)) : new Set<string>();
   const imported = await contactsRepository.insertManyIgnoreDuplicates(
     valid.map((c) => ({
       channelId: channel.id,
@@ -126,27 +147,44 @@ export async function importContacts(req: Request, res: Response) {
       phone: c.phone,
       email: c.email,
       tags: c.tags,
+      metadata: c.metadata,
       groups: groupId ? [groupId] : [],
       source: "import",
       createdBy: req.user!.id,
     })),
   );
-  await activityRepository.record(req, req.user!.id, "contacts_imported", { type: "contact" }, { imported, rows: records.length });
+  const toMerge = withFields.filter((c) => existing.has(c.phone));
+  if (toMerge.length) await contactsRepository.mergeFields(channel.id, toMerge.map((c) => ({ phone: c.phone, metadata: c.metadata })));
+  const updated = toMerge.length;
+  await activityRepository.record(req, req.user!.id, "contacts_imported", { type: "contact" }, { imported, updated, rows: records.length, fields: fieldColumns.length });
   res.json({
     success: true,
     total: records.length,
     imported,
-    duplicates: valid.length - imported + inFileDuplicates,
+    updated,
+    duplicates: valid.length - imported + inFileDuplicates - updated,
     invalid: records.length - valid.length - inFileDuplicates,
+    fields: fieldColumns.map(normalizeFieldKey),
     errors,
   });
 }
 
+/** GET /api/contacts/fields — custom field names in use, with how many contacts have each. */
+export async function listFields(req: Request, res: Response) {
+  const channelId = typeof req.query.channelId === "string" && req.query.channelId ? req.query.channelId : null;
+  if (channelId) await assertChannelAccess(req.user!, channelId);
+  const tenantId = req.user!.tenantId;
+  if (!tenantId) throw badRequest("Custom fields belong to a tenant account");
+  res.json({ data: await contactsRepository.fieldKeys(tenantId, channelId) });
+}
+
 export async function exportContacts(req: Request, res: Response) {
   const { rows } = await contactsRepository.list(req.channel!.id, { page: 1, limit: 100_000 });
-  const header = ["name", "phone", "email", "status", "tags", "source", "created_at"];
+  // Custom fields become extra columns, so an export can be edited and imported back.
+  const fieldKeys = [...new Set(rows.flatMap((c) => Object.keys(c.metadata ?? {})))].sort();
+  const header = ["name", "phone", "email", "status", "tags", "source", "created_at", ...fieldKeys];
   const lines = rows.map((c) =>
-    [c.name, c.phone, c.email, c.status, (c.tags ?? []).join(";"), c.source, c.createdAt?.toISOString()].map(csvCell).join(","),
+    [c.name, c.phone, c.email, c.status, (c.tags ?? []).join(";"), c.source, c.createdAt?.toISOString(), ...fieldKeys.map((k) => c.metadata?.[k] ?? "")].map(csvCell).join(","),
   );
   await activityRepository.record(req, req.user!.id, "contacts_exported", { type: "contact" }, { count: rows.length });
   res.setHeader("Content-Type", "text/csv; charset=utf-8");

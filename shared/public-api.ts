@@ -7,6 +7,9 @@ import { z } from "zod";
 export const API_CHANNELS = ["email", "sms", "whatsapp"] as const;
 export type ApiChannel = (typeof API_CHANNELS)[number];
 export const MAX_API_RECIPIENTS = 1000;
+/** Groups per request, and the total audience a request may reach once groups are expanded. */
+export const MAX_API_GROUPS = 20;
+export const MAX_API_AUDIENCE = 50_000;
 /** Signed requests must be within this many seconds of the server clock. */
 export const SIGNATURE_WINDOW_SECONDS = 300;
 
@@ -40,6 +43,8 @@ const phoneRecipient = z.preprocess(
 );
 
 const common = {
+  /** Contact groups to send to, by group id or exact name; combined with `recipients`. */
+  groups: z.array(z.string().trim().min(1).max(255)).max(MAX_API_GROUPS).default([]),
   /** Shown as the campaign name in the app; defaults to "API · <channel> · <time>". */
   name: z.string().trim().min(1).max(255).optional(),
   /** Send later instead of now (ISO 8601). */
@@ -51,7 +56,7 @@ export const apiSendSchema = z
     z.object({
       channel: z.literal("email"),
       ...common,
-      recipients: z.array(emailRecipient).min(1).max(MAX_API_RECIPIENTS),
+      recipients: z.array(emailRecipient).max(MAX_API_RECIPIENTS).default([]),
       subject: z.string().trim().min(1).max(255),
       html: z.string().min(1).max(500_000).optional(),
       text: z.string().min(1).max(200_000).optional(),
@@ -62,19 +67,28 @@ export const apiSendSchema = z
     z.object({
       channel: z.literal("sms"),
       ...common,
-      recipients: z.array(phoneRecipient).min(1).max(MAX_API_RECIPIENTS),
+      recipients: z.array(phoneRecipient).max(MAX_API_RECIPIENTS).default([]),
       message: z.string().trim().min(1).max(1600),
     }),
     z.object({
       channel: z.literal("whatsapp"),
       ...common,
-      recipients: z.array(phoneRecipient).min(1).max(MAX_API_RECIPIENTS),
-      template: z.object({ name: z.string().trim().min(1).max(512), language: z.string().trim().min(2).max(15).optional() }),
+      recipients: z.array(phoneRecipient).max(MAX_API_RECIPIENTS).default([]),
+      template: z.object({
+        name: z.string().trim().min(1).max(512),
+        language: z.string().trim().min(2).max(15).optional(),
+        /**
+         * Values for {{1}}, {{2}}… used for every recipient without its own `variables`
+         * (e.g. group members). May contain {{name}}, {{first_name}}, {{phone}}, {{email}}.
+         */
+        variables: z.array(z.string().max(1024)).max(20).optional(),
+      }),
       /** WhatsApp number to send from: its id or phone number. Optional when the key has a default or the account has one number. */
       from: z.string().trim().max(64).optional(),
     }),
   ])
   .superRefine((v, ctx) => {
+    if (!v.recipients.length && !v.groups.length) ctx.addIssue({ code: "custom", path: ["recipients"], message: "Provide recipients, groups, or both" });
     if (v.channel === "email" && !v.html && !v.text) ctx.addIssue({ code: "custom", path: ["html"], message: "Provide html or text" });
     if (v.scheduleAt && v.scheduleAt.getTime() < Date.now() - 60_000) ctx.addIssue({ code: "custom", path: ["scheduleAt"], message: "Must be in the future" });
     if (v.scheduleAt && v.scheduleAt.getTime() > Date.now() + 366 * 86_400_000) ctx.addIssue({ code: "custom", path: ["scheduleAt"], message: "At most a year ahead" });

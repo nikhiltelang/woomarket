@@ -36,15 +36,29 @@ export function calculateSegments(text: string): SegmentInfo {
   return { encoding: "UCS-2", units, segments, perSegment, remaining: segments * perSegment - units, nonGsmChars: [...new Set(nonGsm)].slice(0, 10) };
 }
 
-/** Placeholders supported in SMS and email bodies. */
+/** Placeholders supported in SMS and email bodies (plus any custom contact field, e.g. {{age}}). */
 export const MERGE_TAGS = ["{{name}}", "{{first_name}}", "{{phone}}", "{{email}}"] as const;
 
-export function renderMergeTags(text: string, values: { name?: string | null; phone?: string | null; email?: string | null }, escape?: (s: string) => string): string {
+const BUILT_IN = new Set(["name", "first_name", "phone", "email", "unsubscribe_url"]);
+
+export function renderMergeTags(
+  text: string,
+  values: { name?: string | null; phone?: string | null; email?: string | null; fields?: Record<string, string> | null },
+  escape?: (s: string) => string,
+): string {
   const e = escape ?? ((s: string) => s);
   const first = (values.name ?? "").trim().split(/\s+/)[0] ?? "";
-  return text
+  const out = text
     .replace(/\{\{\s*first_name\s*\}\}/gi, e(first))
     .replace(/\{\{\s*name\s*\}\}/gi, e(values.name ?? ""))
     .replace(/\{\{\s*phone\s*\}\}/gi, e(values.phone ?? ""))
     .replace(/\{\{\s*email\s*\}\}/gi, e(values.email ?? ""));
+  // Custom fields. A field the contact doesn't have renders empty rather than as "{{age}}".
+  // Without `fields` (previews, tests) unknown tags are left untouched.
+  if (!values.fields) return out;
+  const fields = values.fields;
+  return out.replace(/\{\{\s*([a-z][a-z0-9_]{0,49})\s*\}\}/gi, (m, key: string) => {
+    const k = key.toLowerCase();
+    return BUILT_IN.has(k) ? m : e(fields[k] ?? "");
+  });
 }

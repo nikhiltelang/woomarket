@@ -16,6 +16,8 @@ import { Card, EmptyState, ErrorState, ProgressBar, Spinner, StatusBadge } from 
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 import { TemplatePreview } from "./templates";
+import { useContactFields } from "@/components/contact-fields";
+import { fieldLabel } from "@shared/contact-fields";
 
 type GroupRow = Group & { contactCount: number };
 
@@ -28,6 +30,13 @@ const FIELD_OPTIONS = [
 
 function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { activeChannel } = useChannel();
+  const customFields = useContactFields(activeChannel?.id);
+  // Built-in contact fields, then each custom field (age, address, …), then fixed text.
+  const fieldOptions = [
+    ...FIELD_OPTIONS.slice(0, 3),
+    ...(customFields.data?.data ?? []).map((f) => ({ value: `field:meta.${f.key}`, label: fieldLabel(f.key) })),
+    FIELD_OPTIONS[3],
+  ];
   const toast = useToast();
   const channelId = activeChannel!.id;
   const templates = useQuery<{ data: Template[] }>({ queryKey: ["/api/templates", { channelId, status: "approved" }], enabled: open });
@@ -100,7 +109,7 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
 
   const previewParams = Array.from({ length: vars }, (_, i) => {
     const m = mapping[String(i + 1)] ?? { kind: "field:name", text: "" };
-    return m.kind === "static" ? m.text || "…" : `[${FIELD_OPTIONS.find((o) => o.value === m.kind)?.label}]`;
+    return m.kind === "static" ? m.text || "…" : `[${fieldOptions.find((o) => o.value === m.kind)?.label ?? m.kind}]`;
   });
 
   return (
@@ -156,7 +165,7 @@ function NewCampaignDialog({ open, onClose }: { open: boolean; onClose: () => vo
                   <div key={key} className="flex flex-wrap items-center gap-2">
                     <span className="w-12 text-sm text-fg-muted">{`{{${key}}}`}</span>
                     <Select className="w-44" value={m.kind} onChange={(e) => setMapping((s) => ({ ...s, [key]: { ...m, kind: e.target.value } }))} aria-label={`Value for {{${key}}}`}>
-                      {FIELD_OPTIONS.map((o) => (
+                      {fieldOptions.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
                         </option>

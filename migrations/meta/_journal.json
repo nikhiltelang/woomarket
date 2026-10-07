@@ -43,6 +43,13 @@
       "when": 1791344144521,
       "tag": "0005_public_api",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1791383576243,
+      "tag": "0006_contact_metadata",
+      "breakpoints": true
     }
   ]
 }

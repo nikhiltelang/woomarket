@@ -4,6 +4,7 @@ import { Eye, Mail, MailOpen, Pause, Pencil, Play, Plus, Send, Trash2, XCircle }
 import type { EmailCampaign, EmailRecipient, EmailTemplate } from "@shared/schema";
 import type { Paginated } from "@shared/api-types";
 import { MERGE_TAGS } from "@shared/sms";
+import { useContactFields } from "@/components/contact-fields";
 import { useAuth } from "@/contexts/auth";
 import { useChannel } from "@/contexts/channel";
 import { apiRequest, queryClient } from "@/lib/api";
@@ -70,6 +71,8 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
   const templates = useQuery<{ data: EmailTemplate[] }>({ queryKey: ["/api/email-marketing/templates"], enabled: open });
   const smtp = useQuery<{ effective: { fromName?: string; source: string } }>({ queryKey: ["/api/smtp/config"], enabled: open });
   const htmlRef = useRef<HTMLTextAreaElement>(null);
+  const fieldList = useContactFields();
+  const customTags = (fieldList.data?.data ?? []).map((f) => `{{${f.key}}}`);
   const subjectRef = useRef<HTMLInputElement>(null);
   const [testTo, setTestTo] = useState("");
   const [s, setS] = useState<ComposerState>(() => blank());
@@ -246,7 +249,7 @@ function Composer({ open, onClose, editing, seed }: { open: boolean; onClose: ()
             label={
               <span className="flex flex-wrap items-center justify-between gap-2">
                 HTML content
-                <MergeTagButtons tags={EMAIL_TAGS} onInsert={(tag) => set("contentHtml", insertAtCursor(htmlRef.current, s.contentHtml, tag))} />
+                <MergeTagButtons tags={[...EMAIL_TAGS, ...customTags]} onInsert={(tag) => set("contentHtml", insertAtCursor(htmlRef.current, s.contentHtml, tag))} />
               </span>
             }
             htmlFor="em-html"

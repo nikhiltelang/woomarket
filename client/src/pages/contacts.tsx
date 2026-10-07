@@ -18,6 +18,8 @@ import { Checkbox, Field, Input, Select } from "@/components/ui/form";
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner, StatusBadge } from "@/components/ui/display";
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
+import { CustomFieldsEditor, fieldRowError, metadataFromRows, rowsFromMetadata, useContactFields, type FieldRow } from "@/components/contact-fields";
+import { fieldLabel } from "@shared/contact-fields";
 
 type ContactForm = z.input<typeof contactSchema>;
 type GroupRow = Group & { contactCount: number };
@@ -28,9 +30,12 @@ function ContactDialog({ open, onClose, contact, groups }: { open: boolean; onCl
   const form = useForm<ContactForm>({ resolver: zodResolver(contactSchema) });
   const [tags, setTags] = useState("");
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [fields, setFields] = useState<FieldRow[]>([]);
+  const known = useContactFields();
 
   useEffect(() => {
     if (!open) return;
+    setFields(rowsFromMetadata(contact?.metadata));
     form.reset({ name: contact?.name ?? "", phone: contact?.phone ?? "", email: contact?.email ?? "", status: (contact?.status as never) ?? "active" });
     setTags((contact?.tags ?? []).join(", "));
     setSelectedGroups(contact?.groups ?? []);
@@ -38,7 +43,7 @@ function ContactDialog({ open, onClose, contact, groups }: { open: boolean; onCl
 
   const save = useMutation({
     mutationFn: (values: ContactForm) => {
-      const body = { ...values, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), groups: selectedGroups };
+      const body = { ...values, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), groups: selectedGroups, metadata: metadataFromRows(fields) };
       return contact
         ? apiRequest("PUT", `/api/contacts/${contact.id}`, body)
         : apiRequest("POST", "/api/contacts", { ...body, channelId: activeChannel!.id });
@@ -47,11 +52,13 @@ function ContactDialog({ open, onClose, contact, groups }: { open: boolean; onCl
       toast({ title: contact ? "Contact updated" : "Contact added", variant: "success" });
       void queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/contacts/fields"] });
       onClose();
     },
     onError: (err) => toast({ title: "Could not save contact", description: (err as Error).message, variant: "error" }),
   });
   const errors = form.formState.errors;
+  const fieldsInvalid = fields.some((_, i) => fieldRowError(fields, i));
 
   return (
     <Dialog
@@ -63,7 +70,7 @@ function ContactDialog({ open, onClose, contact, groups }: { open: boolean; onCl
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={form.handleSubmit((v) => save.mutate(v))} loading={save.isPending}>
+          <Button onClick={form.handleSubmit((v) => save.mutate(v))} loading={save.isPending} disabled={fieldsInvalid}>
             {contact ? "Save changes" : "Add contact"}
           </Button>
         </>
@@ -107,6 +114,7 @@ function ContactDialog({ open, onClose, contact, groups }: { open: boolean; onCl
             </div>
           </fieldset>
         )}
+        <CustomFieldsEditor rows={fields} onChange={setFields} suggestions={known.data?.data.map((f) => f.key)} />
       </form>
     </Dialog>
   );
@@ -117,6 +125,8 @@ interface ImportResult {
   imported: number;
   duplicates: number;
   invalid: number;
+  updated?: number;
+  fields?: string[];
   errors: { row: number; message: string }[];
 }
 
@@ -125,6 +135,7 @@ function ImportDialog({ open, onClose, groups }: { open: boolean; onClose: () =>
   const toast = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [groupId, setGroupId] = useState("");
+  const [updateExisting, setUpdateExisting] = useState(true);
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const run = useMutation({
@@ -133,12 +144,14 @@ function ImportDialog({ open, onClose, groups }: { open: boolean; onClose: () =>
       fd.append("file", file!);
       fd.append("channelId", activeChannel!.id);
       if (groupId) fd.append("groupId", groupId);
+      fd.append("updateExisting", String(updateExisting));
       return apiRequest<ImportResult>("POST", "/api/contacts/import", fd);
     },
     onSuccess: (r) => {
       setResult(r);
       void queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/contacts/fields"] });
     },
     onError: (err) => toast({ title: "Import failed", description: (err as Error).message, variant: "error" }),
   });
@@ -155,7 +168,7 @@ function ImportDialog({ open, onClose, groups }: { open: boolean; onClose: () =>
       open={open}
       onClose={close}
       title="Import contacts"
-      description="Upload a CSV with columns: name, phone, email (optional), tags (optional, separated by ;)."
+      description="Upload a CSV with columns: name, phone, email (optional), tags (optional, separated by ;). Any other column — age, address, city… — is saved as a custom field."
       footer={
         result ? (
           <Button onClick={close}>Done</Button>
@@ -175,9 +188,16 @@ function ImportDialog({ open, onClose, groups }: { open: boolean; onClose: () =>
         <div className="space-y-3 text-sm">
           <p>
             <strong>{formatNumber(result.imported)}</strong> of {formatNumber(result.total)} rows imported.
+            {result.updated ? ` ${formatNumber(result.updated)} existing contact${result.updated === 1 ? "" : "s"} updated.` : ""}
             {result.duplicates > 0 && ` ${formatNumber(result.duplicates)} already existed.`}
             {result.invalid > 0 && ` ${formatNumber(result.invalid)} were invalid.`}
           </p>
+          {!!result.fields?.length && (
+            <p>
+              Custom fields saved:{" "}
+              {result.fields.map((f) => <code key={f} className="mr-1 rounded bg-subtle px-1 text-xs">{`{{${f}}}`}</code>)}
+            </p>
+          )}
           {result.errors.length > 0 && (
             <ul className="max-h-48 space-y-1 overflow-y-auto rounded-md bg-subtle p-3 text-xs">
               {result.errors.map((e) => (
@@ -205,6 +225,14 @@ function ImportDialog({ open, onClose, groups }: { open: boolean; onClose: () =>
               </Select>
             </Field>
           )}
+          <Checkbox
+            checked={updateExisting}
+            onChange={setUpdateExisting}
+            label="Update custom fields of contacts that already exist (matched by phone)"
+          />
+          <div className="rounded-md bg-subtle p-3 text-xs text-fg-muted">
+            Example: <code>name,phone,email,age,address</code> — <code>age</code> and <code>address</code> become custom fields you can use as <code>{"{{age}}"}</code> and <code>{"{{address}}"}</code>.
+          </div>
         </div>
       )}
     </Dialog>
@@ -424,6 +452,12 @@ export default function ContactsPage() {
                     <Td>
                       <p className="font-medium">{c.name}</p>
                       {c.email && <p className="text-xs text-fg-muted">{c.email}</p>}
+                      {c.metadata && Object.keys(c.metadata).length > 0 && (
+                        <p className="mt-0.5 max-w-xs truncate text-xs text-fg-muted" title={Object.entries(c.metadata).map(([k, v]) => `${fieldLabel(k)}: ${v}`).join("\n")}>
+                          {Object.entries(c.metadata).slice(0, 3).map(([k, v]) => `${fieldLabel(k)}: ${v}`).join(" · ")}
+                          {Object.keys(c.metadata).length > 3 && ` · +${Object.keys(c.metadata).length - 3} more`}
+                        </p>
+                      )}
                     </Td>
                     <Td className="tabular-nums">{c.phone}</Td>
                     <Td className="hidden md:table-cell">

@@ -9,10 +9,14 @@ import { classifySmtpError, resolveSmtp, sendEmail, type ResolvedSmtp } from "./
 import { renderEmail } from "./email/render";
 import { getSmsProvider, SmsProviderError } from "./sms/providers";
 import { completeEmailCampaignIfDone, completeSmsCampaignIfDone } from "./marketing.service";
+import { contactsRepository } from "../repositories/contacts.repository";
 
 const log = childLogger("marketing-worker");
 const MAX_ATTEMPTS = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+type Fields = Map<string, Record<string, string>>;
+/** Custom fields of the recipients' contacts, for {{field}} merge tags (one query per batch). */
+const fieldsOf = (recipients: { contactId: string | null }[]): Promise<Fields> => contactsRepository.fieldsByIds(recipients.map((r) => r.contactId).filter((x): x is string => Boolean(x)));
 
 /** Polls for pending email / SMS recipients of campaigns in `sending` state and delivers them. */
 export class MarketingWorker {
@@ -78,8 +82,9 @@ export class MarketingWorker {
         await this.haltEmail(campaign, recipients, (err as Error).message);
         continue;
       }
+      const fields = await fieldsOf(recipients);
       for (let i = 0; i < recipients.length; i++) {
-        const halted = await this.sendOneEmail(campaign, smtp, recipients[i]);
+        const halted = await this.sendOneEmail(campaign, smtp, recipients[i], fields);
         if (halted) {
           await this.haltEmail(campaign, recipients.slice(i + 1), halted);
           break;
@@ -92,8 +97,8 @@ export class MarketingWorker {
   }
 
   /** Returns an error message when the whole campaign must stop (SMTP connection/auth problem). */
-  private async sendOneEmail(c: EmailCampaign, smtp: ResolvedSmtp, r: EmailRecipient): Promise<string | null> {
-    const rendered = renderEmail(c, { id: r.id, name: r.name, email: r.email });
+  private async sendOneEmail(c: EmailCampaign, smtp: ResolvedSmtp, r: EmailRecipient, fields: Fields): Promise<string | null> {
+    const rendered = renderEmail(c, { id: r.id, name: r.name, email: r.email, fields: (r.contactId && fields.get(r.contactId)) || {} });
     try {
       await sendEmail(smtp, { to: r.email, toName: r.name, subject: rendered.subject, html: rendered.html, text: rendered.text, senderName: c.senderName, replyTo: c.replyTo, headers: rendered.headers }, c.userId);
       const now = new Date();
@@ -140,8 +145,9 @@ export class MarketingWorker {
         continue;
       }
       const gateway = await smsGatewayRepository.get(campaign.userId);
+      const fields = await fieldsOf(recipients);
       for (let i = 0; i < recipients.length; i++) {
-        const halted = await this.sendOneSms(campaign, gateway, recipients[i]);
+        const halted = await this.sendOneSms(campaign, gateway, recipients[i], fields);
         if (halted) {
           for (const r of recipients.slice(i + 1)) await smsCampaignsRepository.updateRecipient(r.id, { status: "pending" });
           await smsCampaignsRepository.transition(campaign.id, ["sending"], "failed", { errorMessage: halted });
@@ -154,8 +160,8 @@ export class MarketingWorker {
     return rows.length;
   }
 
-  private async sendOneSms(c: SmsCampaign, gateway: SmsGateway | undefined, r: SmsRecipient): Promise<string | null> {
-    const body = renderMergeTags(c.message, { name: r.name, phone: r.phone });
+  private async sendOneSms(c: SmsCampaign, gateway: SmsGateway | undefined, r: SmsRecipient, fields: Fields): Promise<string | null> {
+    const body = renderMergeTags(c.message, { name: r.name, phone: r.phone, fields: (r.contactId && fields.get(r.contactId)) || {} });
     const callback = gateway && gateway.provider !== "simulator" ? `${publicBaseUrl()}/webhooks/sms/${gateway.provider}/${gateway.id}` : undefined;
     try {
       const { messageId } = await getSmsProvider(gateway).send(r.phone, body, { statusCallbackUrl: callback });

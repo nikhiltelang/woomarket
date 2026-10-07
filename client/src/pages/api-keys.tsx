@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, Copy, Download, KeyRound, Plus, Trash2 } from "lucide-react";
-import { API_CHANNELS, MAX_API_RECIPIENTS, SIGNATURE_WINDOW_SECONDS, type ApiChannel } from "@shared/public-api";
+import { API_CHANNELS, MAX_API_AUDIENCE, MAX_API_GROUPS, MAX_API_RECIPIENTS, SIGNATURE_WINDOW_SECONDS, type ApiChannel } from "@shared/public-api";
 import { useChannel } from "@/contexts/channel";
 import { apiRequest, fieldErrors, queryClient } from "@/lib/api";
 import { cn, formatDate, formatNumber, relativeTime } from "@/lib/utils";
@@ -186,12 +186,19 @@ function Docs() {
   const [auth, setAuth] = useState<"basic" | "signed">("basic");
   const [lang, setLang] = useState<"node" | "python" | "php">("node");
   const [example, setExample] = useState<ApiChannel>("email");
+  const groupList = useQuery<{ data: { id: string; name: string; contactCount: number }[] }>({ queryKey: ["/api/groups"] });
+  const sampleGroup = groupList.data?.data[0];
   const bodies: Record<ApiChannel, string> = {
     email: JSON.stringify({ channel: "email", subject: "Your order has shipped", html: "<p>Hi {{first_name}}, your order is on its way.</p>", senderName: "Acme Store", recipients: ["ada@example.com", { email: "grace@example.com", name: "Grace Hopper" }] }, null, 2),
     sms: JSON.stringify({ channel: "sms", message: "Hi {{first_name}}, your code is 4821.", recipients: ["+14155550123", { phone: "+447700900123", name: "Grace" }] }, null, 2),
     whatsapp: JSON.stringify({ channel: "whatsapp", template: { name: "order_update", language: "en_US" }, recipients: [{ phone: "+14155550123", name: "Ada", variables: ["Ada", "#1042"] }] }, null, 2),
   };
-  const response = JSON.stringify({ data: { id: "4f6c…", channel: "email", name: "API · email · 2026-10-07 09:30 UTC", status: "sending", scheduledAt: null, testMode: false, recipients: { requested: 3, accepted: 2, rejected: [{ recipient: "old@example.com", reason: "unsubscribed" }] } } }, null, 2);
+  const groupBodies: Record<ApiChannel, string> = {
+    email: JSON.stringify({ channel: "email", subject: "Autumn sale starts today", html: "<p>Hi {{first_name}}, 20% off everything.</p>", groups: [sampleGroup?.name ?? "VIP customers", "Newsletter"] }, null, 2),
+    sms: JSON.stringify({ channel: "sms", message: "Hi {{first_name}}, the sale starts today!", groups: [sampleGroup?.id ?? "<group id>"], recipients: ["+14155550123"] }, null, 2),
+    whatsapp: JSON.stringify({ channel: "whatsapp", template: { name: "summer_sale", variables: ["{{first_name}}", "20%"] }, groups: [sampleGroup?.name ?? "VIP customers"] }, null, 2),
+  };
+  const response = JSON.stringify({ data: { id: "4f6c…", channel: "email", name: "API · email · 2026-10-07 09:30 UTC", status: "sending", scheduledAt: null, testMode: false, recipients: { requested: 3, accepted: 2, rejected: [{ recipient: "old@example.com", reason: "unsubscribed" }] }, groups: [] } }, null, 2);
   const curl = `curl ${base}/api/v1/send \\
   -u "$WM_ACCESS_KEY_ID:$WM_SECRET_ACCESS_KEY" \\
   -H "Content-Type: application/json" \\
@@ -259,6 +266,7 @@ echo curl_exec($ch);`,
     ["403", "API_NOT_INCLUDED / CHANNEL_NOT_ALLOWED", "Your account level or this key doesn't allow it."],
     ["403", "PLAN_LIMIT / LEVEL_LIMIT", "A plan or monthly message limit was reached."],
     ["409", "IDEMPOTENCY_KEY_REUSED", "Same Idempotency-Key with a different body."],
+    ["422", "GROUP_NOT_FOUND / AMBIGUOUS_GROUP / EMPTY_AUDIENCE", "A group name or id didn't match, matched several groups, or has no reachable members."],
     ["422", "NO_VALID_RECIPIENTS / TEMPLATE_NOT_AVAILABLE / SMTP_NOT_CONFIGURED", "Nothing can be sent as asked; the message explains why."],
     ["429", "RATE_LIMITED", "More than 120 requests a minute for one key."],
   ];
@@ -271,7 +279,7 @@ echo curl_exec($ch);`,
           <h3 className="mb-2 font-medium">Endpoint</h3>
           <Code>{`POST ${base}/api/v1/send`}</Code>
           <p className="mt-2 text-fg-muted">
-            Up to {formatNumber(MAX_API_RECIPIENTS)} recipients per request. Each request becomes a campaign you can follow in the app (delivery, opens, failures). Responses are <code>202 Accepted</code>: messages are queued and delivered in the background. Add <code>scheduleAt</code> (ISO 8601) to send later.
+            Up to {formatNumber(MAX_API_RECIPIENTS)} listed recipients per request, or whole contact groups (see below). Each request becomes a campaign you can follow in the app (delivery, opens, failures). Responses are <code>202 Accepted</code>: messages are queued and delivered in the background. Add <code>scheduleAt</code> (ISO 8601) to send later.
           </p>
         </section>
 
@@ -310,8 +318,41 @@ X-WM-Signature:     hex(hmac_sha256(secret, string to sign))`}</Code>
             {example === "email" && <li><code>subject</code> and <code>html</code> or <code>text</code> are required. Merge tags: <code>{"{{name}}"}</code>, <code>{"{{first_name}}"}</code>, <code>{"{{email}}"}</code>. An unsubscribe link is added automatically.</li>}
             {example === "sms" && <li>Phone numbers in international format with <code>+</code>. Up to 1,600 characters; long texts are billed as several segments.</li>}
             {example === "whatsapp" && <li>Uses an approved template. <code>variables</code> fill {"{{1}}"}, {"{{2}}"}… in order. Add <code>from</code> (number id or phone) if your account has several numbers.</li>}
+            <li>Contacts' custom fields work as merge tags too, e.g. <code>{"{{age}}"}</code> or <code>{"{{city}}"}</code>, for group members and other saved contacts; a field a contact doesn't have is left blank.</li>
             <li>Recipients who unsubscribed are skipped and listed under <code>rejected</code>.</li>
           </ul>
+        </section>
+
+        <section>
+          <h3 className="mb-2 font-medium">Sending to groups</h3>
+          <p className="mb-2 text-fg-muted">
+            Add <code>groups</code> — up to {MAX_API_GROUPS} group ids or exact group names — instead of, or together with, <code>recipients</code>. Every active member of each group is included once, even if they're in several groups or also listed in <code>recipients</code>; up to {formatNumber(MAX_API_AUDIENCE)} people per request.
+          </p>
+          <Code>{groupBodies[example]}</Code>
+          <ul className="mt-2 mb-3 list-disc space-y-1 pl-5 text-fg-muted">
+            <li>Email reaches members with an email address; SMS reaches members with a phone number.</li>
+            <li>WhatsApp sends from one number to that number's contacts. Without <code>from</code>, the group's own number is used. Fill template variables for everyone with <code>template.variables</code> — merge tags such as <code>{"{{first_name}}"}</code> are replaced per member.</li>
+            <li>The response's <code>groups</code> field shows how many members of each group were reached.</li>
+          </ul>
+          <p className="mb-1.5 text-xs font-medium tracking-wide text-fg-muted uppercase">Your groups</p>
+          {groupList.data?.data.length ? (
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-subtle"><tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Group id</th><th className="px-3 py-2 text-right">Members</th></tr></thead>
+                <tbody className="divide-y divide-border">
+                  {groupList.data.data.map((g) => (
+                    <tr key={g.id}>
+                      <td className="px-3 py-1.5">{g.name}</td>
+                      <td className="px-3 py-1.5"><span className="inline-flex items-center gap-1 font-mono">{g.id}<CopyText text={g.id} label={`id of ${g.name}`} /></span></td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(g.contactCount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-fg-muted">No groups yet — create them under Audience → Groups.</p>
+          )}
         </section>
 
         <section>

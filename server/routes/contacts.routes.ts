@@ -12,6 +12,7 @@ const channel = requireChannelAccess();
 contactRoutes.get("/contacts", requirePermission("contacts:view"), channel, h(c.listContacts));
 contactRoutes.get("/contacts/export", requirePermission("contacts:export"), channel, h(c.exportContacts));
 contactRoutes.post("/contacts/import", requirePermission("contacts:create"), csvUpload.single("file"), channel, h(c.importContacts));
+contactRoutes.get("/contacts/fields", requirePermission("contacts:view"), h(c.listFields));
 contactRoutes.get("/contacts/:id", requirePermission("contacts:view"), h(c.getContact));
 contactRoutes.post("/contacts", requirePermission("contacts:create"), channel, h(c.createContact));
 contactRoutes.put("/contacts/:id", requirePermission("contacts:edit"), h(c.updateContact));

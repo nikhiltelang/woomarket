@@ -1,6 +1,7 @@
 /** Request validation schemas shared by the API and the React forms. */
 import { z } from "zod";
 import { ALL_PERMISSIONS } from "./roles";
+import { contactFieldsSchema } from "./contact-fields";
 
 const phone = z
   .string()
@@ -138,6 +139,8 @@ export const contactSchema = z.object({
   groups: z.array(z.string().uuid()).max(100).optional(),
   tags: z.array(z.string().trim().min(1).max(50)).max(50).optional(),
   status: z.enum(["active", "inactive", "blocked", "unsubscribed"]).optional(),
+  /** Custom fields, e.g. { "age": "34", "address": "12 High St" }. Replaces the stored set when given. */
+  metadata: contactFieldsSchema.optional(),
 });
 
 export const updateContactSchema = contactSchema.partial();

@@ -14,9 +14,10 @@ import type { AuthUser } from "../types";
 const log = childLogger("campaigns");
 
 /** Resolves one template variable for a contact from its mapping ("field:name", "static:Hello", ...). */
-export function resolveVariable(mapping: string | undefined, contact: Pick<Contact, "name" | "phone" | "email">): string {
+export function resolveVariable(mapping: string | undefined, contact: Pick<Contact, "name" | "phone" | "email"> & { metadata?: Contact["metadata"] }): string {
   if (!mapping) return "";
   if (mapping.startsWith("static:")) return mapping.slice(7);
+  if (mapping.startsWith("field:meta.")) return contact.metadata?.[mapping.slice(11)] ?? "";
   switch (mapping) {
     case "field:name":
       return contact.name;

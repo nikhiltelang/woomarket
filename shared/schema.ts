@@ -197,6 +197,8 @@ export const webhookDedup = mysqlTable("webhook_dedup", {
 // Contacts, inbox & messaging
 // ---------------------------------------------------------------------------
 
+export type ContactFields = Record<string, string>;
+
 export const contacts = mysqlTable(
   "contacts",
   {
@@ -210,6 +212,8 @@ export const contacts = mysqlTable(
     email: text("email"),
     groups: jsonArray<string>("groups"),
     tags: jsonArray<string>("tags"),
+    /** Custom fields (age, address, …) keyed by snake_case name; usable as {{key}} merge tags. */
+    metadata: json("metadata").$type<ContactFields>(),
     status: varchar("status", { length: 255 }).default("active"),
     source: varchar("source", { length: 100 }),
     storeId: char("store_id", { length: 36 }),
@@ -614,7 +618,7 @@ export const emailCampaigns = mysqlTable(
     targetAudience: text("target_audience").$defaultFn(() => "all_contacts"),
     targetGroupId: varchar("target_group_id", { length: 255 }),
     targetGroupName: text("target_group_name"),
-    csvData: jsonArray<{ email: string; name?: string }>("csv_data"),
+    csvData: jsonArray<{ email: string; name?: string; contactId?: string }>("csv_data"),
     status: varchar("status", { length: 255 }).default("draft"),
     scheduledAt: ts("scheduled_at"),
     sentAt: ts("sent_at"),
@@ -684,7 +688,7 @@ export const smsCampaigns = mysqlTable(
     targetAudience: text("target_audience").$defaultFn(() => "all_contacts"),
     targetGroupId: varchar("target_group_id", { length: 255 }),
     targetGroupName: text("target_group_name"),
-    csvData: jsonArray<{ phone: string; name?: string }>("csv_data"),
+    csvData: jsonArray<{ phone: string; name?: string; contactId?: string }>("csv_data"),
     status: varchar("status", { length: 255 }).default("draft"),
     scheduledAt: ts("scheduled_at"),
     sentAt: ts("sent_at"),

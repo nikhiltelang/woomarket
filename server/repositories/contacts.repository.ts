@@ -84,6 +84,50 @@ export const contactsRepository = {
     return inserted;
   },
 
+  async fieldsByIds(ids: string[]): Promise<Map<string, Record<string, string>>> {
+    const map = new Map<string, Record<string, string>>();
+    if (!ids.length) return map;
+    const rows = await db.select({ id: contacts.id, metadata: contacts.metadata }).from(contacts).where(inArray(contacts.id, [...new Set(ids)]));
+    for (const r of rows) map.set(r.id, r.metadata ?? {});
+    return map;
+  },
+
+  async existingPhones(channelId: string, phones: string[]): Promise<Set<string>> {
+    const found = new Set<string>();
+    for (let i = 0; i < phones.length; i += 1000) {
+      const rows = await db.select({ phone: contacts.phone }).from(contacts).where(and(eq(contacts.channelId, channelId), inArray(contacts.phone, phones.slice(i, i + 1000))));
+      for (const r of rows) found.add(r.phone);
+    }
+    return found;
+  },
+
+  /** Merges custom fields into existing contacts by phone; returns how many were changed. */
+  async mergeFields(channelId: string, rows: { phone: string; metadata: Record<string, string> }[]): Promise<number> {
+    let changed = 0;
+    for (const r of rows) {
+      const [res] = await db
+        .update(contacts)
+        .set({ metadata: sql`JSON_MERGE_PATCH(COALESCE(${contacts.metadata}, JSON_OBJECT()), CAST(${JSON.stringify(r.metadata)} AS JSON))` })
+        .where(and(eq(contacts.channelId, channelId), eq(contacts.phone, r.phone)));
+      changed += res.affectedRows;
+    }
+    return changed;
+  },
+
+  /** Custom field names in use across the tenant (or one number), most common first. */
+  async fieldKeys(tenantId: string, channelId: string | null): Promise<{ key: string; contacts: number }[]> {
+    const [rows] = await db.execute(sql`
+      SELECT jt.k AS \`key\`, COUNT(*) AS n
+        FROM ${contacts} c
+        JOIN ${channels} ch ON ch.id = c.channel_id,
+             JSON_TABLE(JSON_KEYS(COALESCE(c.metadata, JSON_OBJECT())), '$[*]' COLUMNS (k VARCHAR(64) PATH '$')) jt
+       WHERE ch.created_by = ${tenantId} ${channelId ? sql`AND c.channel_id = ${channelId}` : sql``}
+       GROUP BY jt.k
+       ORDER BY n DESC, jt.k
+       LIMIT 200`);
+    return (rows as unknown as { key: string; n: number }[]).map((r) => ({ key: r.key, contacts: Number(r.n) }));
+  },
+
   async update(id: string, patch: Partial<NewContact>): Promise<Contact | undefined> {
     if (Object.keys(patch).length) await db.update(contacts).set(patch).where(eq(contacts.id, id));
     return this.findById(id);

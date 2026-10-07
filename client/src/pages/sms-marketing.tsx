@@ -4,6 +4,7 @@ import { Copy, Eye, FlaskConical, MessageSquareText, Pause, Pencil, Play, Plus, 
 import type { SmsCampaign, SmsRecipient } from "@shared/schema";
 import type { Paginated } from "@shared/api-types";
 import { calculateSegments, MERGE_TAGS } from "@shared/sms";
+import { useContactFields } from "@/components/contact-fields";
 import { useAuth } from "@/contexts/auth";
 import { useChannel } from "@/contexts/channel";
 import { apiRequest, queryClient } from "@/lib/api";
@@ -63,6 +64,8 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
   const toast = useToast();
   const { activeChannel } = useChannel();
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fieldList = useContactFields();
+  const customTags = (fieldList.data?.data ?? []).map((f) => `{{${f.key}}}`);
   const templates = useQuery<{ data: SmsTemplate[] }>({ queryKey: ["/api/sms-marketing/templates"], enabled: open });
   const gateway = useQuery<{ data: Gateway | null }>({ queryKey: ["/api/sms-marketing/gateway"], enabled: open });
   const [name, setName] = useState("");
@@ -152,7 +155,7 @@ function Composer({ open, onClose, editing }: { open: boolean; onClose: () => vo
             label={
               <span className="flex flex-wrap items-center justify-between gap-2">
                 Message
-                <MergeTagButtons tags={SMS_TAGS} onInsert={(t) => setMessage(insertAtCursor(ref.current, message, t))} />
+                <MergeTagButtons tags={[...SMS_TAGS, ...customTags]} onInsert={(t) => setMessage(insertAtCursor(ref.current, message, t))} />
               </span>
             }
             htmlFor="sms-msg"
