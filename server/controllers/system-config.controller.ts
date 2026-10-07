@@ -8,6 +8,7 @@ import {
   generalSettingsSchema,
   maintenanceSchema,
   notificationSettingsSchema,
+  requestLogSettingsSchema,
   robotsSchema,
   seoSettingsSchema,
   sitemapSchema,
@@ -65,6 +66,7 @@ const SECTIONS = {
   "custom-css": customCssSchema,
   robots: robotsSchema,
   sitemap: sitemapSchema,
+  "request-logs": requestLogSettingsSchema,
 } as const;
 type Section = keyof typeof SECTIONS;
 
@@ -88,6 +90,9 @@ export async function updateSection(req: Request, res: Response) {
       break;
     case "gdpr-cookie":
       patch = { gdprCookie: input };
+      break;
+    case "request-logs":
+      patch = { requestLogSettings: { ...input, excludePaths: [...new Set(input.excludePaths as string[])] } };
       break;
     case "social-login": {
       const prev = current.extensionSettings?.googleLogin;

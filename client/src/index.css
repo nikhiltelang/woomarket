@@ -96,6 +96,11 @@ body {
   outline-offset: 2px;
 }
 
+/* Dialogs take focus themselves so keyboard users land inside; the panel needs no ring. */
+[role="dialog"]:focus-visible {
+  outline: none;
+}
+
 ::selection {
   background: var(--primary-soft);
 }

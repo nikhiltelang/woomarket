@@ -22,6 +22,20 @@
       "when": 1791336604652,
       "tag": "0002_platform_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1791339863411,
+      "tag": "0003_coupons_support",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1791340962705,
+      "tag": "0004_request_logs",
+      "breakpoints": true
     }
   ]
 }

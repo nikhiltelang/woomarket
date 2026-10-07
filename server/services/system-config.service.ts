@@ -68,6 +68,7 @@ export const systemConfig = {
   invalidate() {
     cache = null;
   },
+  isCached: () => Boolean(cache && Date.now() - cache.at < TTL_MS),
   async update(patch: Parameters<typeof systemConfigRepository.update>[0]) {
     const r = await systemConfigRepository.update(patch);
     this.invalidate();

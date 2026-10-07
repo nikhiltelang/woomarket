@@ -14,6 +14,7 @@ import { forceSsl, maintenanceGuard } from "./middlewares/platform";
 import { robotsTxt, sitemapXml } from "./controllers/system-config.controller";
 import { asyncHandler } from "./lib/http";
 import { UPLOADS_DIR } from "./lib/uploads";
+import { requestLogger } from "./middlewares/request-log";
 
 export interface CreateAppOptions {
   sessionStore?: session.Store;
@@ -70,6 +71,9 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
     });
     next();
   });
+
+  // Stores each API/webhook request and its response for Superadmin → Logs.
+  app.use(requestLogger);
 
   app.use(
     express.json({

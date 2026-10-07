@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { sql, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
 import {
   type AnyMySqlColumn,
+  bigint,
   boolean,
   char,
   datetime,
@@ -15,6 +16,7 @@ import {
   index,
   int,
   json,
+  mediumtext,
   mysqlTable,
   text,
   uniqueIndex,
@@ -509,6 +511,10 @@ export const subscriptions = mysqlTable("subscriptions", {
   gatewaySubscriptionId: varchar("gateway_subscription_id", { length: 255 }),
   gatewayProvider: varchar("gateway_provider", { length: 255 }),
   gatewayStatus: varchar("gateway_status", { length: 255 }),
+  /** Plan price for the cycle, the coupon discount and what was charged (null on older rows). */
+  amount: decimal("amount", { precision: 10, scale: 2 }),
+  discount: decimal("discount", { precision: 10, scale: 2 }).default("0"),
+  couponCode: varchar("coupon_code", { length: 40 }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -746,6 +752,15 @@ export interface GdprCookie {
   policyUrl: string;
   cookieLifespanDays: number;
 }
+export interface RequestLogSettings {
+  enabled?: boolean;
+  /** Store request and response bodies (headers and timing are always kept). */
+  captureBodies?: boolean;
+  retentionDays?: number;
+  /** Path prefixes that are never logged, e.g. "/api/notifications/unread-count". */
+  excludePaths?: string[];
+}
+
 export interface ExtensionSettings {
   googleLogin?: { enabled: boolean; clientId: string; clientSecret?: string };
 }
@@ -784,6 +799,7 @@ export const systemConfigurations = mysqlTable("system_configurations", {
   seoSettings: jsonObject<SeoSettings>("seo_settings"),
   frontendSettings: jsonObject<FrontendSettings>("frontend_settings"),
   extensionSettings: jsonObject<ExtensionSettings>("extension_settings"),
+  requestLogSettings: jsonObject<RequestLogSettings>("request_log_settings"),
   maintenanceMode: json("maintenance_mode")
     .$type<MaintenanceMode>()
     .$defaultFn(() => ({ enabled: false, title: "Platform Maintenance", content: "We are currently undergoing scheduled maintenance. Please check back shortly.", bypassSecret: "" })),
@@ -928,6 +944,106 @@ export const otpVerifications = mysqlTable("otp_verifications", {
   updatedAt: updatedAt(),
 });
 
+// ---------------------------------------------------------------------------
+// Coupons & support requests
+// ---------------------------------------------------------------------------
+
+export const coupons = mysqlTable("coupons", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  code: varchar("code", { length: 40 }).notNull().unique(),
+  /** "fixed" (currency amount) or "percent". */
+  type: varchar("type", { length: 20 }).notNull().default("fixed"),
+  discountValue: decimal("discount_value", { precision: 10, scale: 2 }).notNull(),
+  /** "lifetime" or "date" (valid until expiresAt). */
+  expiryType: varchar("expiry_type", { length: 20 }).notNull().default("lifetime"),
+  expiresAt: ts("expires_at"),
+  /** -1 = unlimited. */
+  usageLimit: int("usage_limit").notNull().default(-1),
+  usedCount: int("used_count").notNull().default(0),
+  status: boolean("status").notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const couponRedemptions = mysqlTable(
+  "coupon_redemptions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    couponId: int("coupon_id")
+      .notNull()
+      .references(() => coupons.id, { onDelete: "cascade" }),
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    subscriptionId: char("subscription_id", { length: 36 }).references(() => subscriptions.id, { onDelete: "set null" }),
+    discount: decimal("discount", { precision: 10, scale: 2 }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("coupon_redemptions_coupon_idx").on(t.couponId)],
+);
+
+export const supportRequests = mysqlTable(
+  "support_requests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** "bug" or "support". */
+    type: varchar("type", { length: 20 }).notNull(),
+    message: text("message").notNull(),
+    /** open | in_progress | resolved | closed */
+    status: varchar("status", { length: 20 }).notNull().default("open"),
+    adminReply: text("admin_reply"),
+    repliedAt: ts("replied_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("support_requests_user_idx").on(t.userId), index("support_requests_status_idx").on(t.status)],
+);
+
+// ---------------------------------------------------------------------------
+// Incoming HTTP request log (superadmin → Logs)
+// ---------------------------------------------------------------------------
+
+export const requestLogs = mysqlTable(
+  "request_logs",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    requestId: varchar("request_id", { length: 64 }).notNull(),
+    method: varchar("method", { length: 10 }).notNull(),
+    /** Path without the query string. */
+    path: varchar("path", { length: 500 }).notNull(),
+    query: json("query").$type<Record<string, unknown>>(),
+    statusCode: int("status_code").notNull(),
+    /** Set when the client disconnected before the response finished. */
+    aborted: boolean("aborted").notNull().default(false),
+    /** No foreign key: logs outlive deleted users, so the username is kept too. */
+    userId: char("user_id", { length: 36 }),
+    username: varchar("username", { length: 255 }),
+    role: varchar("role", { length: 20 }),
+    ip: varchar("ip", { length: 64 }),
+    userAgent: varchar("user_agent", { length: 500 }),
+    requestHeaders: json("request_headers").$type<Record<string, string>>(),
+    requestBody: mediumtext("request_body"),
+    requestSize: int("request_size"),
+    responseHeaders: json("response_headers").$type<Record<string, string>>(),
+    responseBody: mediumtext("response_body"),
+    responseSize: int("response_size"),
+    /** When the request arrived and when the response finished (UTC, ms precision). */
+    requestedAt: ts("requested_at").notNull(),
+    respondedAt: ts("responded_at").notNull(),
+    durationMs: double("duration_ms").notNull(),
+  },
+  (t) => [
+    index("request_logs_requested_idx").on(t.requestedAt),
+    index("request_logs_status_idx").on(t.statusCode, t.requestedAt),
+    index("request_logs_user_idx").on(t.userId, t.requestedAt),
+    index("request_logs_request_id_idx").on(t.requestId),
+  ],
+);
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -966,6 +1082,10 @@ export const MANAGED_TABLES = [
   "notifications",
   "sent_notifications",
   "otp_verifications",
+  "coupons",
+  "coupon_redemptions",
+  "support_requests",
+  "request_logs",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -1004,3 +1124,6 @@ export type AccessLevel = InferSelectModel<typeof platformAccessLevels>;
 export type PlatformLanguage = InferSelectModel<typeof platformLanguages>;
 export type Notification = InferSelectModel<typeof notifications>;
 export type SentNotification = InferSelectModel<typeof sentNotifications>;
+export type Coupon = InferSelectModel<typeof coupons>;
+export type SupportRequest = InferSelectModel<typeof supportRequests>;
+export type RequestLog = InferSelectModel<typeof requestLogs>;

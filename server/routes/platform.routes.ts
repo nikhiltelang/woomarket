@@ -3,6 +3,10 @@ import * as sys from "../controllers/system-config.controller";
 import * as auth from "../controllers/auth.controller";
 import * as google from "../controllers/google-auth.controller";
 import { languages, levels, notificationsCtl, policies } from "../controllers/platform.controller";
+import * as coupons from "../controllers/coupons.controller";
+import * as support from "../controllers/support.controller";
+import * as sysinfo from "../controllers/system-info.controller";
+import * as requestLogs from "../controllers/request-logs.controller";
 import { requireAuth, requireRole } from "../middlewares/auth";
 import { authRateLimiter } from "../middlewares/rate-limit";
 import { maintenanceBypass } from "../middlewares/platform";
@@ -26,6 +30,7 @@ platformPublicRoutes.post("/users/resend-verification", authRateLimiter, h(auth.
 /** Signed-in endpoints (notifications for everyone; the rest superadmin-only). */
 export const platformRoutes = Router();
 const sa = requireRole("superadmin");
+const tenant = requireRole("admin", "team");
 
 platformRoutes.get("/notifications/users", requireAuth, h(notificationsCtl.mine));
 platformRoutes.get("/notifications/unread-count", requireAuth, h(notificationsCtl.unread));
@@ -59,3 +64,27 @@ platformRoutes.post("/superadmin/levels", sa, h(levels.create));
 platformRoutes.put("/superadmin/levels/:id", sa, h(levels.update));
 platformRoutes.delete("/superadmin/levels/:id", sa, h(levels.remove));
 platformRoutes.put("/admin/users/:id/level", sa, h(levels.assign));
+
+platformRoutes.get("/superadmin/coupons", sa, h(coupons.list));
+platformRoutes.post("/superadmin/coupons", sa, h(coupons.create));
+platformRoutes.post("/superadmin/coupons/preview", sa, h(coupons.preview));
+platformRoutes.put("/superadmin/coupons/:id(\\d+)", sa, h(coupons.update));
+platformRoutes.put("/superadmin/coupons/:id(\\d+)/status", sa, h(coupons.toggleStatus));
+platformRoutes.delete("/superadmin/coupons/:id(\\d+)", sa, h(coupons.remove));
+
+// Report & request: tenants and their team file them; the superadmin triages.
+platformRoutes.get("/support-requests", tenant, h(support.mine));
+platformRoutes.post("/support-requests", tenant, h(support.create));
+platformRoutes.get("/superadmin/support-requests", sa, h(support.list));
+platformRoutes.get("/superadmin/support-requests/counts", sa, h(support.counts));
+platformRoutes.put("/superadmin/support-requests/:id(\\d+)", sa, h(support.update));
+
+platformRoutes.get("/superadmin/system-info/application", sa, h(sysinfo.application));
+platformRoutes.get("/superadmin/system-info/server", sa, h(sysinfo.server));
+platformRoutes.get("/superadmin/cache", sa, h(sysinfo.cacheStatus));
+platformRoutes.post("/superadmin/cache/clear", sa, h(sysinfo.clearCache));
+
+platformRoutes.get("/superadmin/request-logs", sa, h(requestLogs.list));
+platformRoutes.get("/superadmin/request-logs/stats", sa, h(requestLogs.stats));
+platformRoutes.post("/superadmin/request-logs/clear", sa, h(requestLogs.clear));
+platformRoutes.get("/superadmin/request-logs/:id(\\d+)", sa, h(requestLogs.get));

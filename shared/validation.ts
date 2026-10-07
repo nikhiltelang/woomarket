@@ -263,6 +263,7 @@ export const assignSubscriptionSchema = z.object({
   userId: z.string().uuid(),
   planId: z.string().uuid(),
   billingCycle: z.enum(["monthly", "annual"]).default("monthly"),
+  couponCode: z.string().trim().toUpperCase().max(40).nullish(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

@@ -83,7 +83,15 @@ notification (in-app bell in real time and/or email); Manage levels (per-tenant 
 contacts, campaigns and monthly messages plus feature switches, enforced on top of plans); System
 settings (general, logo & favicon, system configuration switches, notification/SMTP & global email
 template, SEO, frontend content, Google sign-in, languages & translations, cron jobs, policy pages,
-maintenance mode, GDPR cookie banner, custom CSS, sitemap.xml, robots.txt).
+maintenance mode, GDPR cookie banner, custom CSS, sitemap.xml, robots.txt); Manage coupons (fixed or
+percentage, lifetime or dated, usage limits; applied when assigning a plan, redemptions counted
+atomically, price/discount/total stored on the subscription); Report & request (tenants and their team
+file bug reports and support requests, the superadmin triages and replies, both sides notified in-app);
+Extra → Application and Server information, Cache (settings cache, expired sessions, used verification
+codes, old webhook keys) and Update; Logs (every API and webhook request with its response: method, URL,
+query, headers, payload, status, response headers and body, request/response timestamps and duration;
+secrets redacted before storage, bodies capped at 64 KB, buffered batch writes, filters and stats, configurable
+retention, body capture and excluded paths, hourly cleanup job).
 
 In development, email and SMS fall back to simulators when nothing is configured: emails are captured
 (see `GET /api/email-marketing/simulated-outbox`) and SMS receipts are played back; numbers ending in

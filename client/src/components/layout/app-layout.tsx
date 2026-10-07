@@ -8,6 +8,10 @@ import {
   ChevronsUpDown,
   CreditCard,
   FileText,
+  Bug,
+  LayoutGrid,
+  ScrollText,
+  TicketPercent,
   Gauge,
   LayoutDashboard,
   LogOut,
@@ -16,7 +20,6 @@ import {
   Menu,
   MessageSquare,
   MessageSquareText,
-  RefreshCw,
   Settings,
   Shield,
   SlidersHorizontal,
@@ -58,6 +61,11 @@ function useNav(): { title: string; items: NavItem[] }[] {
   const { data: unread } = useQuery<{ count: number }>({ queryKey: ["/api/conversations/unread-count"], enabled: !isSuper, refetchInterval: 60_000 });
   const { data: counts } = useQuery<{ data: Counts }>({ queryKey: ["/api/admin/users/counts"], enabled: isSuper, refetchInterval: 60_000 });
   const c = counts?.data;
+  const { data: support } = useQuery<{ data: Record<string, number> }>({ queryKey: ["/api/superadmin/support-requests/counts"], enabled: isSuper, refetchInterval: 60_000 });
+  // A new report reaches the superadmin as a notification; refresh the open count with it.
+  useSocketEvent("notification:new", () => {
+    if (isSuper) void queryClient.invalidateQueries({ queryKey: ["/api/superadmin/support-requests/counts"] });
+  });
 
   if (isSuper) {
     return [
@@ -82,13 +90,26 @@ function useNav(): { title: string; items: NavItem[] }[] {
           { href: "/manage-levels", label: t("nav.manageLevels"), icon: <Gauge className="h-4 w-4" /> },
           { href: "/channels-management", label: t("nav.channels"), icon: <Building2 className="h-4 w-4" /> },
           { href: "/master-subscriptions", label: t("nav.plans"), icon: <CreditCard className="h-4 w-4" /> },
+          { href: "/manage-coupons", label: t("nav.coupons"), icon: <TicketPercent className="h-4 w-4" /> },
+          { href: "/report-request", label: t("nav.reportRequest"), icon: <Bug className="h-4 w-4" />, badge: support?.data.open, badgeTone: "warning" },
         ],
       },
       {
         title: t("nav.system"),
         items: [
           { href: "/system-settings", label: t("nav.systemSettings"), icon: <SlidersHorizontal className="h-4 w-4" /> },
-          { href: "/app-update", label: t("nav.appUpdate"), icon: <RefreshCw className="h-4 w-4" /> },
+          { href: "/logs", label: t("nav.logs"), icon: <ScrollText className="h-4 w-4" /> },
+          {
+            href: "/extra",
+            label: t("nav.extra"),
+            icon: <LayoutGrid className="h-4 w-4" />,
+            children: [
+              { href: "/extra/application", label: t("nav.application") },
+              { href: "/extra/server", label: t("nav.server") },
+              { href: "/extra/cache", label: t("nav.cache") },
+              { href: "/extra/update", label: t("nav.appUpdate") },
+            ],
+          },
         ],
       },
     ];
@@ -118,6 +139,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
         { href: "/team", label: t("nav.team"), icon: <Shield className="h-4 w-4" />, permission: "team:view" },
         { href: "/settings", label: t("nav.whatsappNumbers"), icon: <Settings className="h-4 w-4" />, permission: "settings:view" },
         { href: "/plans", label: t("nav.plan"), icon: <BarChart3 className="h-4 w-4" /> },
+        { href: "/support", label: t("nav.reportRequest"), icon: <Bug className="h-4 w-4" /> },
       ],
     },
   ];
@@ -319,7 +341,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     >
                       {i.icon}
                       <span className="flex-1">{i.label}</span>
-                      {badge(i.badge)}
+                      {badge(i.badge, i.badgeTone)}
                     </Link>
                   </li>
                 );

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import { db } from "../db";
+import { unprocessable } from "../lib/errors";
+import type { Quote } from "../services/coupon.service";
+import { couponsRepository } from "./coupons.repository";
 import { plans, subscriptions, type Plan, type PlanLimits, type Subscription } from "@shared/schema";
 
 type NewPlan = typeof plans.$inferInsert;
@@ -62,8 +65,11 @@ export const billingRepository = {
     return db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).orderBy(desc(subscriptions.createdAt));
   },
 
-  /** Replaces any active subscription with a new one for the plan. */
-  async assign(userId: string, plan: Plan, billingCycle: "monthly" | "annual"): Promise<Subscription> {
+  /**
+   * Replaces any active subscription with a new one for the plan. With a quote that carries a
+   * coupon, the coupon use is counted in the same transaction (COUPON_INVALID rolls back).
+   */
+  async assign(userId: string, plan: Plan, billingCycle: "monthly" | "annual", pricing?: Quote): Promise<Subscription> {
     const start = new Date();
     const end = new Date(start);
     if (billingCycle === "annual") end.setFullYear(end.getFullYear() + 1);
@@ -83,7 +89,13 @@ export const billingRepository = {
         billingCycle,
         startDate: start,
         endDate: end,
+        amount: pricing ? pricing.total.toFixed(2) : null,
+        discount: (pricing?.discount ?? 0).toFixed(2),
+        couponCode: pricing?.coupon?.code ?? null,
       });
+      if (pricing?.coupon && !(await couponsRepository.redeem(tx, pricing.coupon.id, userId, id, pricing.discount.toFixed(2)))) {
+        throw unprocessable("This coupon is no longer available", "COUPON_INVALID");
+      }
     });
     const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, id));
     return row;

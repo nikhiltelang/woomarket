@@ -4,6 +4,8 @@ import { startDueMarketingCampaigns } from "../services/marketing.service";
 import { channelsRepository } from "../repositories/channels.repository";
 import { cronLogRepository } from "../repositories/platform.repository";
 import { whatsappFactory } from "../services/whatsapp";
+import { requestLogsRepository } from "../repositories/request-logs.repository";
+import { requestLogSettings } from "../services/request-log.service";
 
 const log = childLogger("cron");
 
@@ -45,6 +47,17 @@ export const jobs: Job[] = [
         await channelsRepository.recordHealth(channel.id, health.status, health.details);
       }
       return `${list.length} channel(s) checked`;
+    },
+  },
+  {
+    key: "request-log-cleanup",
+    name: "Request log cleanup",
+    description: "Deletes request logs older than the retention period set on the Logs page.",
+    intervalMs: 60 * 60 * 1000,
+    run: async () => {
+      const { retentionDays } = await requestLogSettings();
+      const removed = await requestLogsRepository.deleteOlderThan(new Date(Date.now() - retentionDays * 86400_000));
+      return `${removed} log entr${removed === 1 ? "y" : "ies"} older than ${retentionDays} day(s) removed`;
     },
   },
   {

@@ -44,6 +44,7 @@ export function Field({
   hint,
   children,
   className,
+  required,
 }: {
   label?: ReactNode;
   htmlFor?: string;
@@ -51,10 +52,17 @@ export function Field({
   hint?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Marks the label with a red asterisk. */
+  required?: boolean;
 }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      {label && <Label htmlFor={htmlFor}>{label}</Label>}
+      {label && (
+        <Label htmlFor={htmlFor}>
+          {label}
+          {required && <span className="ml-0.5 text-danger" aria-hidden>*</span>}
+        </Label>
+      )}
       {children}
       {error ? <p className="text-xs text-danger">{error}</p> : hint ? <p className="text-xs text-fg-muted">{hint}</p> : null}
     </div>

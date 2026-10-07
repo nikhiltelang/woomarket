@@ -9,6 +9,7 @@ import { usersRepository } from "../repositories/users.repository";
 import { activityRepository } from "../repositories/activity.repository";
 import { channelsRepository } from "../repositories/channels.repository";
 import { systemConfig } from "../services/system-config.service";
+import { requestLogsRepository } from "../repositories/request-logs.repository";
 import type { PublicConfig } from "@shared/platform";
 import type { SystemConfig } from "@shared/schema";
 
@@ -104,6 +105,7 @@ export function makeSystemConfig(overrides: Partial<SystemConfig> = {}): SystemC
     seoSettings: {},
     frontendSettings: {},
     extensionSettings: {},
+    requestLogSettings: {},
     maintenanceMode: { enabled: false, title: "Maintenance", content: "Back soon", bypassSecret: "" },
     gdprCookie: { enabled: false, bannerText: "", acceptButtonText: "OK", declineButtonText: "No", policyUrl: "", cookieLifespanDays: 365 },
     customCss: "",
@@ -119,6 +121,8 @@ export function makeSystemConfig(overrides: Partial<SystemConfig> = {}): SystemC
 export function mockSystemConfig(overrides: Partial<SystemConfig> = {}) {
   const cfg = makeSystemConfig(overrides);
   vi.spyOn(systemConfig, "get").mockResolvedValue(cfg);
+  // Request logs are captured but never written to the (unreachable) test database.
+  vi.spyOn(requestLogsRepository, "insertMany").mockResolvedValue();
   vi.spyOn(systemConfig, "public").mockResolvedValue({
     siteTitle: "Test",
     tagline: null,

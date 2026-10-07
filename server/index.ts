@@ -12,6 +12,7 @@ import { attachRealtime, closeRealtime } from "./services/realtime";
 import { messageQueueWorker } from "./services/message-queue";
 import { marketingWorker } from "./services/marketing-worker";
 import { startScheduler, stopScheduler } from "./cron/scheduler";
+import { flushRequestLogs } from "./services/request-log.service";
 import { reconcileStaleRuns } from "./app-update/reconciler";
 import { runSeed } from "./seed";
 import { renderIndexHtml } from "./services/system-config.service";
@@ -100,6 +101,7 @@ async function main() {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     server.closeAllConnections?.();
     sessionStore.close();
+    await flushRequestLogs().catch(() => {});
     await closeDatabase();
     logger.info("Shutdown complete");
     process.exit(0);

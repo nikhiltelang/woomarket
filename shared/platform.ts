@@ -150,6 +150,59 @@ export const sendNotificationSchema = z
   .refine((v) => v.viaInApp || v.viaEmail, { message: "Choose at least one delivery channel", path: ["viaInApp"] })
   .refine((v) => v.targetType !== "users" || v.targetIds.length > 0, { message: "Choose at least one user", path: ["targetIds"] });
 
+export const couponSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    code: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9_-]{3,40}$/, "3–40 letters, digits, - or _"),
+    type: z.enum(["fixed", "percent"]),
+    discountValue: z.coerce.number().positive("Must be more than 0").max(99_999_999),
+    expiryType: z.enum(["lifetime", "date"]),
+    expiresAt: z.coerce.date().nullish(),
+    usageLimit: z.coerce
+      .number()
+      .int()
+      .min(-1)
+      .refine((n) => n !== 0, "Enter -1 for unlimited or at least 1"),
+    status: bool.default(true),
+  })
+  .refine((v) => v.type !== "percent" || v.discountValue <= 100, { message: "A percentage can't exceed 100", path: ["discountValue"] })
+  .refine((v) => v.expiryType !== "date" || v.expiresAt, { message: "Choose an expiry date", path: ["expiresAt"] });
+
+export const couponPreviewSchema = z.object({
+  code: z.string().trim().toUpperCase().min(1).max(40),
+  planId: z.string().uuid(),
+  billingCycle: z.enum(["monthly", "annual"]).default("monthly"),
+});
+
+/** Discount a coupon gives on a price, rounded to cents and never more than the price. */
+export function couponDiscount(coupon: { type: string; discountValue: string | number }, price: number): number {
+  const value = Number(coupon.discountValue);
+  const raw = coupon.type === "percent" ? (price * value) / 100 : value;
+  return Math.round(Math.min(Math.max(raw, 0), price) * 100) / 100;
+}
+
+export const SUPPORT_STATUSES = ["open", "in_progress", "resolved", "closed"] as const;
+export const supportRequestSchema = z.object({
+  type: z.enum(["bug", "support"]),
+  message: z.string().trim().min(10, "Please describe it in at least 10 characters").max(5000),
+});
+export const supportUpdateSchema = z.object({
+  status: z.enum(SUPPORT_STATUSES),
+  reply: z.string().trim().max(5000).nullish(),
+});
+
+export const REQUEST_LOG_DEFAULTS = { enabled: true, captureBodies: true, retentionDays: 14, excludePaths: [] as string[] };
+export const requestLogSettingsSchema = z.object({
+  enabled: bool,
+  captureBodies: bool,
+  retentionDays: z.coerce.number().int().min(1, "At least 1 day").max(365, "At most 365 days"),
+  excludePaths: z.array(z.string().trim().regex(/^\/\S{0,299}$/, "Each path starts with / and has no spaces")).max(50),
+});
+
 export const verifyEmailSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code"),
@@ -222,7 +275,14 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.plans": "Plans",
   "nav.system": "System",
   "nav.systemSettings": "System settings",
-  "nav.appUpdate": "Application update",
+  "nav.appUpdate": "Update",
+  "nav.coupons": "Manage coupons",
+  "nav.extra": "Extra",
+  "nav.application": "Application",
+  "nav.server": "Server",
+  "nav.cache": "Cache",
+  "nav.reportRequest": "Report & request",
+  "nav.logs": "Logs",
   "nav.signOut": "Sign out",
   "nav.signingOut": "Signing out…",
   "topbar.live": "Live",

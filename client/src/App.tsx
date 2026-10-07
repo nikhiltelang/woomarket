@@ -39,6 +39,12 @@ const AdminUsers = lazy(() => import("@/pages/admin/users"));
 const AdminChannels = lazy(() => import("@/pages/admin/channels"));
 const AdminPlans = lazy(() => import("@/pages/admin/plans"));
 const AppUpdate = lazy(() => import("@/pages/admin/app-update"));
+const Coupons = lazy(() => import("@/pages/admin/coupons"));
+const SupportRequests = lazy(() => import("@/pages/admin/support-requests"));
+const SystemInfo = lazy(() => import("@/pages/admin/system-info"));
+const CachePage = lazy(() => import("@/pages/admin/cache"));
+const LogsPage = lazy(() => import("@/pages/admin/logs"));
+const ReportRequest = lazy(() => import("@/pages/report-request"));
 
 const TENANT: Role[] = ["admin", "team"];
 const SUPER: Role[] = ["superadmin"];
@@ -64,6 +70,7 @@ const routes: RouteDef[] = [
   { path: "/settings", component: Settings, roles: TENANT, permission: "settings:view" },
   { path: "/team", component: Team, roles: TENANT, permission: "team:view" },
   { path: "/plans", component: Plans, roles: TENANT },
+  { path: "/support", component: ReportRequest, roles: TENANT },
   { path: "/account", component: Account },
   { path: "/admin", component: AdminOverview, roles: SUPER },
   { path: "/users/send-notification", component: SendNotification, roles: SUPER },
@@ -71,6 +78,13 @@ const routes: RouteDef[] = [
   { path: "/manage-levels", component: Levels, roles: SUPER },
   { path: "/channels-management", component: AdminChannels, roles: SUPER },
   { path: "/master-subscriptions", component: AdminPlans, roles: SUPER },
+  { path: "/manage-coupons", component: Coupons, roles: SUPER },
+  { path: "/report-request", component: SupportRequests, roles: SUPER },
+  { path: "/extra/application", component: () => <SystemInfo kind="application" />, roles: SUPER },
+  { path: "/extra/server", component: () => <SystemInfo kind="server" />, roles: SUPER },
+  { path: "/extra/cache", component: CachePage, roles: SUPER },
+  { path: "/logs", component: LogsPage, roles: SUPER },
+  { path: "/extra/update", component: AppUpdate, roles: SUPER },
   { path: "/app-update", component: AppUpdate, roles: SUPER },
   { path: "/system-settings", component: SettingsHub, roles: SUPER },
   { path: "/system-settings/:section", component: SettingsSection, roles: SUPER },

@@ -18,6 +18,12 @@ import { Avatar, Badge, Card, EmptyState, ErrorState, PageHeader, Spinner, Statu
 import { Pagination, Table, Td, Th, Tr } from "@/components/ui/table";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 
+interface CouponQuote {
+  price: number;
+  discount: number;
+  total: number;
+  code: string | null;
+}
 type Row = PublicUser & { planName: string | null; levelName: string | null };
 type CreateForm = z.input<typeof adminCreateUserSchema>;
 
@@ -92,6 +98,10 @@ function UserDetail({ userId, onClose }: { userId: string | null; onClose: () =>
   const levels = useQuery<{ data: AccessLevel[] }>({ queryKey: ["/api/superadmin/levels"], enabled: Boolean(userId) });
   const [planId, setPlanId] = useState("");
   const [cycle, setCycle] = useState<"monthly" | "annual">("monthly");
+  const [coupon, setCoupon] = useState("");
+  const [applied, setApplied] = useState<CouponQuote | null>(null);
+  const [couponError, setCouponError] = useState<string>();
+  const { config } = usePlatform();
   const [banning, setBanning] = useState(false);
   const [reason, setReason] = useState("");
 
@@ -101,7 +111,24 @@ function UserDetail({ userId, onClose }: { userId: string | null; onClose: () =>
     invalidateUsers();
   };
   const fail = (err: unknown) => toast({ title: "Action failed", description: (err as Error).message, variant: "error" });
-  const assignPlan = useMutation({ mutationFn: () => apiRequest("POST", "/api/assignSubscription", { userId, planId, billingCycle: cycle }), onSuccess: done("Plan assigned"), onError: fail });
+  // A previewed coupon no longer matches once the plan, cycle or code changes.
+  useEffect(() => {
+    setApplied(null);
+    setCouponError(undefined);
+  }, [planId, cycle, coupon]);
+  const preview = useMutation({
+    mutationFn: () => apiRequest<{ data: CouponQuote }>("POST", "/api/superadmin/coupons/preview", { code: coupon, planId, billingCycle: cycle }),
+    onSuccess: (r) => setApplied(r.data),
+    onError: (err) => setCouponError((err as Error).message),
+  });
+  const assignPlan = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/assignSubscription", { userId, planId, billingCycle: cycle, couponCode: coupon.trim() || null }),
+    onSuccess: () => {
+      setCoupon("");
+      done("Plan assigned")();
+    },
+    onError: fail,
+  });
   const assignLevel = useMutation({ mutationFn: (level: number | null) => apiRequest("PUT", `/api/admin/users/${userId}/level`, { level }), onSuccess: done("Level updated"), onError: fail });
   const ban = useMutation({
     mutationFn: () => apiRequest("PUT", `/api/admin/users/${userId}/ban`, { reason }),
@@ -118,6 +145,9 @@ function UserDetail({ userId, onClose }: { userId: string | null; onClose: () =>
 
   const u = data?.data;
   const active = data?.subscriptions.find((s) => s.status === "active");
+  const money = (n: number) => `${config?.currencySymbol ?? "$"}${n.toFixed(2)}`;
+  const selectedPlan = plans.data?.data.find((p) => p.id === planId);
+  const selectedPrice = selectedPlan ? Number(cycle === "annual" ? selectedPlan.annualPrice : selectedPlan.monthlyPrice) || 0 : null;
   const isSelf = u?.id === me?.id;
 
   return (
@@ -164,7 +194,15 @@ function UserDetail({ userId, onClose }: { userId: string | null; onClose: () =>
           {u.role === "admin" && (
             <section className="border-t border-border pt-4">
               <h3 className="mb-1 font-medium">Subscription</h3>
-              <p className="mb-3 text-fg-muted">{active ? `${active.planData.name} (${active.billingCycle}) until ${formatDate(active.endDate)}` : "No active subscription — plan-limited features are blocked."}</p>
+              <p className="mb-3 text-fg-muted">
+                {active ? `${active.planData.name} (${active.billingCycle}) until ${formatDate(active.endDate)}` : "No active subscription — plan-limited features are blocked."}
+                {active?.amount != null && (
+                  <span className="block text-xs">
+                    Charged {money(Number(active.amount))}
+                    {active.couponCode && ` with coupon ${active.couponCode} (−${money(Number(active.discount))})`}
+                  </span>
+                )}
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Select value={planId} onChange={(e) => setPlanId(e.target.value)} className="w-44" aria-label="Plan">
                   <option value="">Choose plan…</option>
@@ -176,6 +214,29 @@ function UserDetail({ userId, onClose }: { userId: string | null; onClose: () =>
                 </Select>
                 <Button onClick={() => assignPlan.mutate()} loading={assignPlan.isPending} disabled={!planId}>Assign plan</Button>
               </div>
+              {planId && (
+                <div className="mt-3 space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      value={coupon}
+                      onChange={(e) => setCoupon(e.target.value.toUpperCase().replace(/\s/g, ""))}
+                      placeholder="Coupon code (optional)"
+                      className="w-56 font-mono uppercase"
+                      aria-label="Coupon code"
+                      invalid={Boolean(couponError)}
+                    />
+                    <Button variant="outline" onClick={() => preview.mutate()} loading={preview.isPending} disabled={!coupon.trim()}>Apply</Button>
+                  </div>
+                  {couponError && <p className="text-xs text-danger">{couponError}</p>}
+                  {selectedPrice !== null && (
+                    <dl className="w-64 space-y-0.5 text-sm tabular-nums">
+                      <div className="flex justify-between"><dt className="text-fg-muted">Price</dt><dd>{money(applied?.price ?? selectedPrice)}</dd></div>
+                      {applied && <div className="flex justify-between text-success"><dt>Coupon {applied.code}</dt><dd>−{money(applied.discount)}</dd></div>}
+                      <div className="flex justify-between border-t border-border pt-0.5 font-medium"><dt>Total</dt><dd>{money(applied?.total ?? selectedPrice)}</dd></div>
+                    </dl>
+                  )}
+                </div>
+              )}
             </section>
           )}
 

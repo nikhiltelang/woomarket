@@ -6,6 +6,7 @@ import { billingRepository } from "../repositories/billing.repository";
 import { usersRepository } from "../repositories/users.repository";
 import { activityRepository } from "../repositories/activity.repository";
 import { isDuplicateKeyError } from "../lib/errors";
+import { quote } from "../services/coupon.service";
 
 export async function listPlans(_req: Request, res: Response) {
   res.json({ data: await billingRepository.listPlans() });
@@ -53,8 +54,9 @@ export async function assignSubscription(req: Request, res: Response) {
   const [user, plan] = await Promise.all([usersRepository.findById(input.userId), billingRepository.findPlan(input.planId)]);
   if (!user || user.role !== "admin") throw notFound("Tenant admin");
   if (!plan) throw notFound("Plan");
-  const sub = await billingRepository.assign(user.id, plan, input.billingCycle);
-  await activityRepository.record(req, req.user!.id, "subscription_assigned", { type: "user", id: user.id }, { plan: plan.name });
+  const pricing = await quote(plan, input.billingCycle, input.couponCode);
+  const sub = await billingRepository.assign(user.id, plan, input.billingCycle, pricing);
+  await activityRepository.record(req, req.user!.id, "subscription_assigned", { type: "user", id: user.id }, { plan: plan.name, coupon: pricing.coupon?.code ?? null });
   res.status(201).json({ data: sub });
 }
 
