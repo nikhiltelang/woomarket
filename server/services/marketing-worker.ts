@@ -100,19 +100,24 @@ export class MarketingWorker {
   private async sendOneEmail(c: EmailCampaign, smtp: ResolvedSmtp, r: EmailRecipient, fields: Fields): Promise<string | null> {
     const rendered = renderEmail(c, { id: r.id, name: r.name, email: r.email, fields: (r.contactId && fields.get(r.contactId)) || {} });
     try {
-      await sendEmail(smtp, { to: r.email, toName: r.name, subject: rendered.subject, html: rendered.html, text: rendered.text, senderName: c.senderName, replyTo: c.replyTo, headers: rendered.headers }, c.userId);
+      const { messageId } = await sendEmail(
+        smtp,
+        { to: r.email, toName: r.name, subject: rendered.subject, html: rendered.html, text: rendered.text, senderName: c.senderName, replyTo: c.replyTo, headers: rendered.headers, tags: { wm_recipient: r.id, wm_campaign: c.id } },
+        c.userId,
+      );
       const now = new Date();
-      await emailCampaignsRepository.updateRecipient(r.id, { status: "sent", sentAt: now, deliveredAt: now, errorMessage: null });
+      // Counted as delivered on hand-off; an SES bounce notification later corrects it.
+      await emailCampaignsRepository.updateRecipient(r.id, { status: "sent", sentAt: now, deliveredAt: now, errorMessage: null, messageId });
       await emailCampaignsRepository.increment(c.id, "sentCount");
       await emailCampaignsRepository.increment(c.id, "deliveredCount");
       this.attempts.delete(r.id);
       return null;
     } catch (err) {
-      const kind = classifySmtpError(err);
+      const kind = classifySmtpError(err, smtp);
       const message = (err as Error).message;
       if (kind === "config") {
         await emailCampaignsRepository.updateRecipient(r.id, { status: "pending" });
-        return `SMTP error: ${message}`;
+        return `${smtp.provider === "ses" ? "Amazon SES" : "SMTP"} error: ${message}`;
       }
       if (kind === "temporary" && this.retryOrFail(r.id)) {
         await emailCampaignsRepository.updateRecipient(r.id, { status: "pending", errorMessage: message });

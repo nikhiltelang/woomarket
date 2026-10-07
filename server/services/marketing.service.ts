@@ -5,7 +5,7 @@ import { db } from "../db";
 import { conflict, notFound, unprocessable } from "../lib/errors";
 import { childLogger } from "../lib/logger";
 import { verifyToken } from "../lib/tokens";
-import { emailCampaignsRepository } from "../repositories/email.repository";
+import { emailCampaignsRepository, suppressionsRepository } from "../repositories/email.repository";
 import { smsCampaignsRepository, smsGatewayRepository } from "../repositories/sms.repository";
 import { contactsRepository } from "../repositories/contacts.repository";
 import { resolveSmtp } from "./email/mailer";
@@ -35,12 +35,15 @@ export async function resolveEmailAudience(c: EmailCampaign) {
       ? (c.csvData ?? []).map((r) => ({ contactId: r.contactId ?? null, email: r.email, name: r.name ?? null }))
       : (await audienceContacts(c, [isNotNull(contacts.email), ne(contacts.email, "")])).map((r) => ({ contactId: r.id, email: r.email!, name: r.name }));
   const seen = new Set<string>();
-  return rows.filter((r) => {
+  const unique = rows.filter((r) => {
     const key = r.email.trim().toLowerCase();
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  // Hard bounces, spam complaints and manual entries are never emailed again.
+  const suppressed = await suppressionsRepository.filter(c.userId, unique.map((r) => r.email));
+  return suppressed.size ? unique.filter((r) => !suppressed.has(r.email.trim().toLowerCase())) : unique;
 }
 
 export async function startEmailCampaign(id: string): Promise<EmailCampaign> {

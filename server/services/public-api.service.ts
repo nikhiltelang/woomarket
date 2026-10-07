@@ -10,7 +10,7 @@ import { campaignsRepository } from "../repositories/campaigns.repository";
 import { channelsRepository } from "../repositories/channels.repository";
 import { contactsRepository } from "../repositories/contacts.repository";
 import { groupsRepository } from "../repositories/groups.repository";
-import { emailCampaignsRepository } from "../repositories/email.repository";
+import { emailCampaignsRepository, suppressionsRepository } from "../repositories/email.repository";
 import { smsCampaignsRepository, smsGatewayRepository } from "../repositories/sms.repository";
 import { templatesRepository } from "../repositories/templates.repository";
 import { resolveSmtp } from "./email/mailer";
@@ -78,7 +78,8 @@ async function suppressedEmails(tenantId: string, emails: string[]): Promise<Set
       .innerJoin(emailCampaigns, eq(emailCampaigns.id, emailCampaignRecipients.campaignId))
       .where(and(eq(emailCampaigns.userId, tenantId), inArray(emailCampaignRecipients.email, emails), eq(emailCampaignRecipients.errorMessage, "unsubscribed"))),
   ]);
-  return new Set([...fromContacts, ...fromLinks].map((r) => (r.v ?? "").toLowerCase()));
+  const listed = await suppressionsRepository.filter(tenantId, emails);
+  return new Set([...fromContacts, ...fromLinks].map((r) => (r.v ?? "").toLowerCase()).concat([...listed]));
 }
 
 async function suppressedPhones(tenantId: string, phones: string[]): Promise<Set<string>> {

@@ -1,15 +1,22 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { config } from "../../config";
-import { decryptSecret } from "../../lib/crypto";
+import { decryptStoredSecret } from "../../lib/crypto";
 import { unprocessable } from "../../lib/errors";
 import { childLogger } from "../../lib/logger";
 import { smtpRepository } from "../../repositories/email.repository";
+import { classifySesError, sendWithSes } from "./ses";
 
 const log = childLogger("mailer");
 
 export interface ResolvedSmtp {
   source: "tenant" | "platform" | "env" | "simulator";
   key: string;
+  /** "ses" sends through the Amazon SES API (user = access key id, pass = secret). */
+  provider: "smtp" | "ses";
+  /** smtp_config row id (tenant or platform); null for env/simulator. */
+  configId: string | null;
+  region?: string | null;
+  configurationSet?: string | null;
   host?: string;
   port?: number;
   secure?: boolean;
@@ -28,6 +35,8 @@ export interface OutgoingEmail {
   senderName?: string | null;
   replyTo?: string | null;
   headers?: Record<string, string>;
+  /** Provider tags (SES message tags), e.g. the recipient id for bounce matching. */
+  tags?: Record<string, string>;
 }
 
 export interface SimulatedEmail extends OutgoingEmail {
@@ -51,6 +60,8 @@ function simulateMode(): "force" | "fallback" | "off" {
 const simulator = (): ResolvedSmtp => ({
   source: "simulator",
   key: "simulator",
+  provider: "smtp",
+  configId: null,
   fromName: config.APP_NAME,
   fromEmail: "no-reply@simulator.local",
 });
@@ -63,11 +74,15 @@ export async function resolveSmtp(tenantId: string | null): Promise<ResolvedSmtp
     return {
       source: row.userId ? "tenant" : "platform",
       key: `${row.id}:${row.updatedAt?.getTime()}`,
+      provider: row.provider === "ses" ? "ses" : "smtp",
+      configId: row.id,
+      region: row.region,
+      configurationSet: row.configurationSet,
       host: row.host,
       port: row.port,
       secure: Boolean(row.secure),
       user: row.user,
-      pass: row.password ? decryptSecret(row.password) : undefined,
+      pass: row.password ? decryptStoredSecret(row.password) : undefined,
       fromName: row.fromName,
       fromEmail: row.fromEmail,
     };
@@ -77,6 +92,8 @@ export async function resolveSmtp(tenantId: string | null): Promise<ResolvedSmtp
     return {
       source: "env",
       key: "env",
+      provider: "smtp",
+      configId: null,
       host: config.SMTP_HOST,
       port: config.SMTP_PORT ?? 587,
       secure: config.SMTP_SECURE,
@@ -87,7 +104,7 @@ export async function resolveSmtp(tenantId: string | null): Promise<ResolvedSmtp
     };
   }
   if (simulateMode() === "fallback") return simulator();
-  throw unprocessable("No SMTP server is configured. Add your SMTP settings under Email marketing → Settings.", "SMTP_NOT_CONFIGURED");
+  throw unprocessable("No email provider is configured. Add an SMTP server or Amazon SES under Email marketing → Settings.", "SMTP_NOT_CONFIGURED");
 }
 
 const transports = new Map<string, Transporter>();
@@ -119,6 +136,13 @@ const formatAddress = (name: string | null | undefined, email: string) => (name 
 
 export async function sendEmail(smtp: ResolvedSmtp, msg: OutgoingEmail, tenantId: string | null): Promise<{ messageId: string; simulated: boolean }> {
   const from = formatAddress(msg.senderName || smtp.fromName, smtp.fromEmail);
+  if (smtp.provider === "ses") {
+    const messageId = await sendWithSes(
+      { region: smtp.region ?? "us-east-1", accessKeyId: smtp.user ?? "", secretAccessKey: smtp.pass ?? "" },
+      { from, to: formatAddress(msg.toName, msg.to), replyTo: msg.replyTo || undefined, subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers, tags: msg.tags, configurationSet: smtp.configurationSet },
+    );
+    return { messageId, simulated: false };
+  }
   const info = await transportFor(smtp).sendMail({
     from,
     to: formatAddress(msg.toName, msg.to),
@@ -156,7 +180,8 @@ export async function verifySmtpSettings(s: { host: string; port: number; secure
 export type SmtpErrorKind = "config" | "temporary" | "permanent";
 
 /** Connection/auth problems stop the campaign; 4xx retries; 5xx fails the recipient. */
-export function classifySmtpError(err: unknown): SmtpErrorKind {
+export function classifySmtpError(err: unknown, smtp?: Pick<ResolvedSmtp, "provider" | "fromEmail">): SmtpErrorKind {
+  if (smtp?.provider === "ses") return classifySesError(err, smtp.fromEmail);
   const e = err as { code?: string; responseCode?: number };
   if (["EAUTH", "ECONNECTION", "ETIMEDOUT", "EDNS", "ESOCKET", "ECONNREFUSED", "ENOTFOUND", "ETLS"].includes(e.code ?? "")) return "config";
   if (e.responseCode && e.responseCode >= 400 && e.responseCode < 500) return "temporary";

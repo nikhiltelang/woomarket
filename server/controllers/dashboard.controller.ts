@@ -177,7 +177,8 @@ async function emailStatus(tenantId: string): Promise<ChannelStatus> {
   try {
     const smtp = await resolveSmtp(tenantId);
     if (smtp.source === "simulator") return { ready: true, detail: "Test mode (simulator)" };
-    return { ready: true, detail: smtp.source === "tenant" ? `Sending via ${smtp.host}` : "Sending via platform SMTP" };
+    const via = smtp.provider === "ses" ? `Amazon SES (${smtp.region})` : smtp.host;
+    return { ready: true, detail: smtp.source === "tenant" ? `Sending via ${via}` : `Sending via platform ${smtp.provider === "ses" ? "Amazon SES" : "SMTP"}` };
   } catch {
     return { ready: false, detail: "No SMTP server set up" };
   }

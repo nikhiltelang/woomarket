@@ -579,6 +579,14 @@ export const smtpConfig = mysqlTable("smtp_config", {
   fromName: text("from_name").notNull(),
   fromEmail: text("from_email").notNull(),
   logo: text("logo").$defaultFn(() => "null"),
+  /** "smtp", or "ses" (Amazon SES API: `user` = access key id, `password` = secret access key). */
+  provider: varchar("provider", { length: 20 }).notNull().default("smtp"),
+  /** SES region, e.g. us-east-1. */
+  region: varchar("region", { length: 30 }),
+  /** Optional SES configuration set (event publishing, dedicated IPs). */
+  configurationSet: varchar("configuration_set", { length: 64 }),
+  /** SNS topic whose bounce/complaint notifications are accepted (pinned on first confirmation). */
+  snsTopicArn: varchar("sns_topic_arn", { length: 255 }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -650,9 +658,31 @@ export const emailCampaignRecipients = mysqlTable(
     deliveredAt: ts("delivered_at"),
     openedAt: ts("opened_at"),
     errorMessage: text("error_message"),
+    /** Provider message id (SES MessageId), used to match bounce and complaint notifications. */
+    messageId: varchar("message_id", { length: 255 }),
     createdAt: createdAt(),
   },
-  (t) => [index("email_recipients_campaign_idx").on(t.campaignId), index("email_recipients_status_idx").on(t.status)],
+  (t) => [
+    index("email_recipients_campaign_idx").on(t.campaignId),
+    index("email_recipients_status_idx").on(t.status),
+    index("email_recipients_message_idx").on(t.messageId),
+  ],
+);
+
+/** Addresses that must not be emailed again (hard bounces, spam complaints, manual). */
+export const emailSuppressions = mysqlTable(
+  "email_suppressions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Tenant id; NULL for platform (system) email. */
+    userId: char("user_id", { length: 36 }).references(() => users.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    /** "bounce" | "complaint" | "manual" */
+    reason: varchar("reason", { length: 20 }).notNull(),
+    detail: text("detail"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("email_suppressions_user_email_unique").on(t.userId, t.email)],
 );
 
 export const smsGateways = mysqlTable("sms_gateways", {
@@ -1159,6 +1189,7 @@ export const MANAGED_TABLES = [
   "api_keys",
   "api_idempotency_keys",
   "api_used_signatures",
+  "email_suppressions",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -1201,3 +1232,4 @@ export type Coupon = InferSelectModel<typeof coupons>;
 export type SupportRequest = InferSelectModel<typeof supportRequests>;
 export type RequestLog = InferSelectModel<typeof requestLogs>;
 export type ApiKey = InferSelectModel<typeof apiKeys>;
+export type EmailSuppression = InferSelectModel<typeof emailSuppressions>;

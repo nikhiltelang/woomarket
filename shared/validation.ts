@@ -281,7 +281,8 @@ export type CreateTeamMemberInput = z.infer<typeof createTeamMemberSchema>;
 
 const optionalEmail = z.string().trim().toLowerCase().email().or(z.literal("")).nullish();
 
-export const smtpConfigSchema = z.object({
+const smtpServerSchema = z.object({
+  provider: z.literal("smtp"),
   host: z.string().trim().min(1).max(255),
   port: z.coerce.number().int().min(1).max(65535),
   secure: z.boolean().default(false),
@@ -291,6 +292,37 @@ export const smtpConfigSchema = z.object({
   fromName: z.string().trim().min(1).max(100),
   fromEmail: z.string().trim().toLowerCase().email(),
 });
+
+/** Regions where Amazon SES sends email (the list in the settings form). */
+export const SES_REGIONS = [
+  "us-east-1", "us-east-2", "us-west-1", "us-west-2", "ca-central-1", "sa-east-1",
+  "eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1",
+  "ap-south-1", "ap-south-2", "ap-southeast-1", "ap-southeast-2", "ap-southeast-3", "ap-northeast-1", "ap-northeast-2", "ap-northeast-3",
+  "me-south-1", "me-central-1", "af-south-1", "il-central-1", "us-gov-west-1",
+] as const;
+
+const sesSchema = z.object({
+  provider: z.literal("ses"),
+  region: z.string().trim().regex(/^[a-z]{2}(-[a-z]+)+-\d$/, "Choose an AWS region, e.g. us-east-1"),
+  accessKeyId: z.string().trim().regex(/^(AKIA|ASIA)[A-Z0-9]{12,124}$/, "An access key id starts with AKIA"),
+  /** Omit to keep the stored secret. */
+  secretAccessKey: z.string().trim().min(16).max(256).optional(),
+  configurationSet: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, "Letters, digits, - and _")
+    .or(z.literal(""))
+    .optional(),
+  fromName: z.string().trim().min(1).max(100),
+  fromEmail: z.string().trim().toLowerCase().email(),
+});
+
+/** Email sending settings: an SMTP server or Amazon SES. Requests without `provider` mean SMTP. */
+export const smtpConfigSchema = z.preprocess(
+  (v) => (v && typeof v === "object" && !("provider" in v) ? { ...v, provider: "smtp" } : v),
+  z.discriminatedUnion("provider", [smtpServerSchema, sesSchema]),
+);
+export type EmailProviderInput = z.infer<typeof smtpConfigSchema>;
 
 export const emailTemplateSchema = z.object({
   name: z.string().trim().min(1).max(255),

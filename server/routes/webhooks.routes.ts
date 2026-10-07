@@ -1,6 +1,7 @@
 import { Router } from "express";
 import * as c from "../controllers/webhooks.controller";
 import * as sms from "../controllers/sms-marketing.controller";
+import * as smtp from "../controllers/smtp.controller";
 import { asyncHandler as h } from "../lib/http";
 
 /** Inbound Meta webhooks (mounted at the site root, outside /api). */
@@ -14,3 +15,6 @@ webhookRoutes.post("/webhook/:id", h(c.receiveWebhook));
 webhookRoutes.post("/webhooks/sms/twilio/:gatewayId", h(sms.twilioStatus));
 webhookRoutes.get("/webhooks/sms/vonage/:gatewayId", h(sms.vonageStatus));
 webhookRoutes.post("/webhooks/sms/vonage/:gatewayId", h(sms.vonageStatus));
+
+// Amazon SES bounces, complaints and deliveries via Amazon SNS (signature-verified)
+webhookRoutes.post("/webhooks/ses/:configId", smtp.snsBody, h(smtp.sesFeedback));

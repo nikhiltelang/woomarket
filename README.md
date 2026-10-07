@@ -95,6 +95,14 @@ templates, personalisation, scheduling, open tracking, RFC 8058 one-click unsubs
 pause/resume/cancel), **SMS marketing** (Twilio, Vonage or simulator; GSM-7/UCS-2 segment and
 credit calculation, signed delivery-receipt webhooks), plans & subscription limits, dashboards, in-app updater.
 
+**Email providers:** each tenant (and the platform default) sends through an SMTP server or
+**Amazon SES** (SESv2 API: access key, secret, region, optional configuration set). The SES check
+shows the sending quota, sandbox vs production access and whether the From address/domain is verified.
+Sends follow the account's max send rate. Bounces and complaints arrive via Amazon SNS at
+`/webhooks/ses/<config-id>` (signature-verified, subscription auto-confirmed, topic pinned): hard
+bounces and complaints go to a per-tenant suppression list that every campaign and API send skips.
+Email credentials are always stored encrypted.
+
 **Landing page:** a public marketing page at `/` for signed-out visitors, managed by the superadmin
 (Landing page in the sidebar): on/off switch, top menu and footer, and sections that can be shown,
 hidden, reordered, added and deleted — hero (with image upload), stats, features, a WhatsApp/email/SMS

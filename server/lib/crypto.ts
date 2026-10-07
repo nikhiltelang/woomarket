@@ -65,3 +65,8 @@ export function decryptApiSecret(stored: string): string {
   decipher.setAuthTag(raw.subarray(12, 28));
   return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
 }
+
+/** Credentials that must never sit readable in the database (SMTP passwords, AWS secret keys). */
+export const encryptStoredSecret = encryptApiSecret;
+/** Reads values written by encryptStoredSecret, encryptSecret or (legacy) plain text. */
+export const decryptStoredSecret = decryptApiSecret;

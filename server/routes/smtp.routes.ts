@@ -12,3 +12,8 @@ smtpRoutes.delete("/smtp/config", requireRole("admin", "superadmin"), requirePer
 smtpRoutes.post("/smtp/test", requireRole("admin", "superadmin"), requirePermission("settings:edit"), h(c.testConfig));
 smtpRoutes.get("/admin/getSmtpConfig", superadmin, h(c.getConfig));
 smtpRoutes.post("/admin/smtpConfig", superadmin, h(c.saveConfig));
+
+// Email suppression list (hard bounces, complaints, manual) for the tenant, or the platform for superadmins.
+smtpRoutes.get("/smtp/suppressions", requireRole("admin", "team", "superadmin"), h(c.listSuppressions));
+smtpRoutes.post("/smtp/suppressions", requireRole("admin", "superadmin"), requirePermission("settings:edit"), h(c.addSuppression));
+smtpRoutes.delete("/smtp/suppressions/:id(\\d+)", requireRole("admin", "superadmin"), requirePermission("settings:edit"), h(c.removeSuppression));
