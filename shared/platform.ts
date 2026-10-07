@@ -288,6 +288,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.reportRequest": "Report & request",
   "nav.logs": "Logs",
   "nav.apiKeys": "API keys",
+  "nav.landingPage": "Landing page",
   "nav.signOut": "Sign out",
   "nav.signingOut": "Signing out…",
   "topbar.live": "Live",

@@ -10,6 +10,7 @@ import {
   Bug,
   KeyRound,
   LayoutGrid,
+  PanelsTopLeft,
   ScrollText,
   TicketPercent,
   Gauge,
@@ -96,6 +97,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
         title: t("nav.system"),
         items: [
           { href: "/system-settings", label: t("nav.systemSettings"), icon: <SlidersHorizontal className="h-4 w-4" /> },
+          { href: "/landing-page", label: t("nav.landingPage"), icon: <PanelsTopLeft className="h-4 w-4" /> },
           { href: "/logs", label: t("nav.logs"), icon: <ScrollText className="h-4 w-4" /> },
           {
             href: "/extra",

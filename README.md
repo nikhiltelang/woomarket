@@ -76,6 +76,13 @@ templates, personalisation, scheduling, open tracking, RFC 8058 one-click unsubs
 pause/resume/cancel), **SMS marketing** (Twilio, Vonage or simulator; GSM-7/UCS-2 segment and
 credit calculation, signed delivery-receipt webhooks), plans & subscription limits, dashboards, in-app updater.
 
+**Landing page:** a public marketing page at `/` for signed-out visitors, managed by the superadmin
+(Landing page in the sidebar): on/off switch, top menu and footer, and sections that can be shown,
+hidden, reordered, added and deleted — hero (with image upload), stats, features, a WhatsApp/email/SMS
+channel showcase, how-it-works steps, pricing (from Plans), testimonials, FAQ, call to action and
+free-form Markdown — with a live preview of unsaved changes. When off, `/` goes to sign-in; `/home`
+always shows the page. Links are restricted to https, site paths, anchors and mailto.
+
 **Custom contact fields:** any number of extra fields per contact (age, address, …) stored in
 `contacts.metadata` (JSON, keys normalised to snake_case). Set them in the contact form or import them —
 every CSV column besides name/phone/email/tags becomes a field, optionally merged into existing contacts.

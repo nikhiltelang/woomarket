@@ -9,6 +9,7 @@ const MAINTENANCE_ALLOW = [
   "/api/version",
   "/api/csrf-token",
   "/api/system-config/public",
+  "/api/landing-page",
   "/api/auth/",
   "/api/maintenance/",
   "/api/policy-pages",

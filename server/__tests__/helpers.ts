@@ -106,6 +106,7 @@ export function makeSystemConfig(overrides: Partial<SystemConfig> = {}): SystemC
     frontendSettings: {},
     extensionSettings: {},
     requestLogSettings: {},
+    landingPage: null,
     maintenanceMode: { enabled: false, title: "Maintenance", content: "Back soon", bypassSecret: "" },
     gdprCookie: { enabled: false, bannerText: "", acceptButtonText: "OK", declineButtonText: "No", policyUrl: "", cookieLifespanDays: 365 },
     customCss: "",

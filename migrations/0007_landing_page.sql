@@ -1,0 +1,1 @@
+ALTER TABLE `system_configurations` ADD `landing_page` json;

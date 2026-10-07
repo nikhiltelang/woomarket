@@ -19,10 +19,10 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
   return (
     <div className="flex min-h-full">
       <aside className="hidden w-[44%] max-w-xl flex-col justify-between bg-primary p-10 text-primary-fg lg:flex">
-        <div className="flex items-center gap-3">
+        <a href="/" className="flex items-center gap-3">
           <img src={config?.logo || "/favicon.svg"} alt="" className="h-9 w-9 rounded bg-white/10 object-contain p-0.5" />
           <span className="text-lg font-semibold">{config?.siteTitle ?? "WooMarket360"}</span>
-        </div>
+        </a>
         <div>
           <h2 className="text-3xl leading-tight font-semibold">{f.heroTitle || "Reach every customer on WhatsApp, email and SMS"}</h2>
           <p className="mt-3 text-base opacity-85">{f.heroSubtitle || config?.tagline || "Campaigns, templates and delivery tracking for every channel, plus a shared WhatsApp inbox for your team."}</p>

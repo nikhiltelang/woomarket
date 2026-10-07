@@ -34,6 +34,8 @@ const SettingsSection = lazy(() => import("@/pages/admin/settings/section-page")
 const SendNotification = lazy(() => import("@/pages/admin/send-notification"));
 const Levels = lazy(() => import("@/pages/admin/levels"));
 const PolicyPage = lazy(() => import("@/pages/policy"));
+const LandingRoute = lazy(() => import("@/pages/landing"));
+const LandingEditor = lazy(() => import("@/pages/admin/landing-editor"));
 const AdminOverview = lazy(() => import("@/pages/admin/overview"));
 const AdminUsers = lazy(() => import("@/pages/admin/users"));
 const AdminChannels = lazy(() => import("@/pages/admin/channels"));
@@ -86,6 +88,7 @@ const routes: RouteDef[] = [
   { path: "/extra/server", component: () => <SystemInfo kind="server" />, roles: SUPER },
   { path: "/extra/cache", component: CachePage, roles: SUPER },
   { path: "/logs", component: LogsPage, roles: SUPER },
+  { path: "/landing-page", component: LandingEditor, roles: SUPER },
   { path: "/extra/update", component: AppUpdate, roles: SUPER },
   { path: "/app-update", component: AppUpdate, roles: SUPER },
   { path: "/system-settings", component: SettingsHub, roles: SUPER },
@@ -153,6 +156,8 @@ export default function App() {
             <AuthProvider>
               <Suspense fallback={<PageLoader />}>
                 <Switch>
+                  <Route path="/">{() => <LandingRoute />}</Route>
+                  <Route path="/home">{() => <LandingRoute always />}</Route>
                   <Route path="/login" component={LoginPage} />
                   <Route path="/signup" component={SignupPage} />
                   <Route path="/policy/:slug" component={PolicyPage} />

@@ -804,6 +804,8 @@ export const systemConfigurations = mysqlTable("system_configurations", {
   frontendSettings: jsonObject<FrontendSettings>("frontend_settings"),
   extensionSettings: jsonObject<ExtensionSettings>("extension_settings"),
   requestLogSettings: jsonObject<RequestLogSettings>("request_log_settings"),
+  /** Public landing page (see shared/landing.ts); empty means "not configured yet". */
+  landingPage: json("landing_page").$type<Record<string, unknown>>(),
   maintenanceMode: json("maintenance_mode")
     .$type<MaintenanceMode>()
     .$defaultFn(() => ({ enabled: false, title: "Platform Maintenance", content: "We are currently undergoing scheduled maintenance. Please check back shortly.", bypassSecret: "" })),
