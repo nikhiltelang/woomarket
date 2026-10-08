@@ -65,7 +65,7 @@ export const WEBHOOK_SAMPLES: Record<WebhookEvent, Record<string, unknown>> = {
   "message.read": { messageId: "wamid.HBgMOTE5ODEyMzQ1Njc4FQIAERgS", channelId: contact.channelId, to: contact.phone, status: "read", campaignId: "5d1f0c2a-0000-4000-8000-000000000004", at: now },
   "message.failed": { messageId: "wamid.HBgMOTE5ODEyMzQ1Njc4FQIAERgS", channelId: contact.channelId, to: contact.phone, status: "failed", error: { code: "131026", message: "Message undeliverable" }, campaignId: null, at: now },
   "contact.created": { contact },
-  "contact.updated": { contact, changed: ["tags"] },
+  "contact.updated": { contact, changed: ["tags"], tagsAdded: ["vip"], groupsAdded: [] },
   "contact.unsubscribed": { channel: "email", email: contact.email, contactId: contact.id, campaignId: "9a2b3c4d-0000-4000-8000-000000000005", at: now },
   "campaign.completed": { channel: "email", campaignId: "9a2b3c4d-0000-4000-8000-000000000005", name: "Diwali sale", recipients: 1200, sent: 1188, delivered: 1180, failed: 12, opened: 640, clicked: 210, completedAt: now },
   "email.opened": { campaignId: "9a2b3c4d-0000-4000-8000-000000000005", email: contact.email, contactId: contact.id, at: now },

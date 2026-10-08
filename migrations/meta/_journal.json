@@ -176,6 +176,13 @@
       "when": 1791468148399,
       "tag": "0024_chatbot",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1791481575552,
+      "tag": "0025_automations",
+      "breakpoints": true
     }
   ]
 }

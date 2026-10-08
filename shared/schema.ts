@@ -338,6 +338,8 @@ export const campaigns = mysqlTable(
     /** When each recipient gets it: { mode: "immediate" | "local_time" | "best_time", localTime? } */
     delivery: json("delivery").$type<{ mode: string; localTime?: string; ignoreQuietHours?: boolean }>(),
     abTest: json("ab_test").$type<AbTestState>(),
+    /** Set on the hidden campaign an automation step sends through (kept out of campaign lists). */
+    automationId: char("automation_id", { length: 36 }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -677,6 +679,8 @@ export const emailCampaigns = mysqlTable(
     utm: json("utm").$type<UtmSettings>(),
     delivery: json("delivery").$type<{ mode: string; localTime?: string; ignoreQuietHours?: boolean }>(),
     abTest: json("ab_test").$type<AbTestState>(),
+    /** Set on the hidden campaign an automation step sends through (kept out of campaign lists). */
+    automationId: char("automation_id", { length: 36 }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -781,6 +785,8 @@ export const smsCampaigns = mysqlTable(
     utm: json("utm").$type<UtmSettings>(),
     delivery: json("delivery").$type<{ mode: string; localTime?: string; ignoreQuietHours?: boolean }>(),
     abTest: json("ab_test").$type<AbTestState>(),
+    /** Set on the hidden campaign an automation step sends through (kept out of campaign lists). */
+    automationId: char("automation_id", { length: 36 }),
     errorMessage: text("error_message"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1638,6 +1644,97 @@ export const chatbotEvents = mysqlTable(
 );
 export type ChatbotEvent = InferSelectModel<typeof chatbotEvents>;
 
+// ---------------------------------------------------------------------------
+// Automation flows
+// ---------------------------------------------------------------------------
+
+export const automations = mysqlTable(
+  "automations",
+  {
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    description: varchar("description", { length: 500 }),
+    /** draft | active | paused */
+    status: varchar("status", { length: 12 }).notNull().default("draft"),
+    trigger: json("trigger").$type<Record<string, unknown>>().notNull(),
+    /** Step tree (see shared/automations.ts). */
+    steps: json("steps").$type<unknown[]>().notNull(),
+    /** never | after_exit */
+    reentry: varchar("reentry", { length: 12 }).notNull().default("never"),
+    /** Hidden campaign each send step delivers through: { [stepId]: { kind, id } }. */
+    stepCampaigns: json("step_campaigns").$type<Record<string, { kind: "whatsapp" | "email" | "sms"; id: string }>>(),
+    enrolledCount: int("enrolled_count").notNull().default(0),
+    completedCount: int("completed_count").notNull().default(0),
+    /** Date triggers: the local day (YYYY-MM-DD) they last enrolled on. */
+    lastDateRun: varchar("last_date_run", { length: 10 }),
+    activatedAt: ts("activated_at"),
+    createdBy: char("created_by", { length: 36 }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("automations_user_idx").on(t.userId, t.status)],
+);
+export type Automation = InferSelectModel<typeof automations>;
+
+/** One contact's way through a flow. */
+export const automationRuns = mysqlTable(
+  "automation_runs",
+  {
+    id: id(),
+    automationId: char("automation_id", { length: 36 })
+      .notNull()
+      .references(() => automations.id, { onDelete: "cascade" }),
+    userId: char("user_id", { length: 36 }).notNull(),
+    contactId: char("contact_id", { length: 36 })
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    /** active (due now) | waiting | completed | exited | failed */
+    status: varchar("status", { length: 12 }).notNull().default("active"),
+    /** The step that runs next (null once finished). */
+    currentStepId: varchar("current_step_id", { length: 40 }),
+    nextRunAt: ts("next_run_at"),
+    /** Claimed by a worker until then. */
+    lockedUntil: ts("locked_until"),
+    /** What enrolled the contact (trigger data, merge values). */
+    context: json("context").$type<Record<string, unknown>>(),
+    lastError: varchar("last_error", { length: 500 }),
+    startedAt: createdAt(),
+    finishedAt: ts("finished_at"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("automation_runs_due_idx").on(t.status, t.nextRunAt),
+    index("automation_runs_flow_contact_idx").on(t.automationId, t.contactId),
+    index("automation_runs_contact_idx").on(t.contactId),
+  ],
+);
+export type AutomationRun = InferSelectModel<typeof automationRuns>;
+
+/** What each step did for each run (also the per-step statistics). */
+export const automationStepLogs = mysqlTable(
+  "automation_step_logs",
+  {
+    id: id(),
+    runId: char("run_id", { length: 36 })
+      .notNull()
+      .references(() => automationRuns.id, { onDelete: "cascade" }),
+    automationId: char("automation_id", { length: 36 }).notNull(),
+    stepId: varchar("step_id", { length: 40 }).notNull(),
+    /** done | skipped | failed | yes | no */
+    outcome: varchar("outcome", { length: 10 }).notNull(),
+    detail: varchar("detail", { length: 300 }),
+    /** Recipient row of the message this step queued (for engagement conditions). */
+    refId: char("ref_id", { length: 36 }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("automation_step_logs_flow_idx").on(t.automationId, t.stepId), index("automation_step_logs_run_idx").on(t.runId)],
+);
+export type AutomationStepLog = InferSelectModel<typeof automationStepLogs>;
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -1701,6 +1798,9 @@ export const MANAGED_TABLES = [
   "social_accounts",
   "chatbot_rules",
   "chatbot_events",
+  "automations",
+  "automation_runs",
+  "automation_step_logs",
 ] as const;
 
 // ---------------------------------------------------------------------------

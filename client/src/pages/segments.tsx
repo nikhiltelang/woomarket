@@ -16,7 +16,7 @@ import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { useConfirm, useToast } from "@/components/ui/overlay";
 
 type Field = SegmentCondition["field"];
-type Cond = { field: Field; op: string; value: string | number; key?: string };
+export type Cond = { field: Field; op: string; value: string | number; key?: string };
 interface Draft {
   id?: string;
   name: string;
@@ -52,7 +52,7 @@ function opsFor(field: Field): readonly string[] {
   }
 }
 
-function blank(field: Field): Cond {
+export function blank(field: Field): Cond {
   switch (field) {
     case "status":
       return { field, op: "eq", value: "active" };
@@ -75,7 +75,7 @@ function blank(field: Field): Cond {
 const EMPTY: Draft = { name: "", description: "", rules: { match: "all", conditions: [blank("tag")] } };
 
 /** Conditions complete enough to evaluate (the preview skips the rest). */
-function complete(c: Cond): boolean {
+export function complete(c: Cond): boolean {
   if (c.field === "custom" && !/^[a-z][a-z0-9_]{0,49}$/.test(c.key ?? "")) return false;
   if (NO_VALUE_OPS.has(c.op)) return true;
   if (["tag", "group"].includes(c.field) || c.field === "custom" || ["eq", "neq", "contains", "not_contains", "starts_with"].includes(c.op)) return String(c.value).trim() !== "";
@@ -322,7 +322,7 @@ function SegmentEditor({ initial, channelId, groups, onDone }: { initial: Draft;
   );
 }
 
-function ConditionRow({ c, onChange, groups, fieldKeys }: { c: Cond; onChange: (c: Cond) => void; groups: Group[]; fieldKeys: string[] }) {
+export function ConditionRow({ c, onChange, groups, fieldKeys }: { c: Cond; onChange: (c: Cond) => void; groups: Group[]; fieldKeys: string[] }) {
   const ops = opsFor(c.field);
   const isDays = c.field === "engagement" || c.op === "within_days" || c.op === "older_than_days";
   const listId = "seg-field-keys";

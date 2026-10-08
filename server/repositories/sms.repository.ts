@@ -52,7 +52,7 @@ export const smsCampaignsRepository = {
   },
 
   async list(tenantId: string, opts: { page: number; limit: number; status?: string }) {
-    const conds: SQL[] = [eq(smsCampaigns.userId, tenantId)];
+    const conds: SQL[] = [eq(smsCampaigns.userId, tenantId), isNull(smsCampaigns.automationId)];
     if (opts.status) conds.push(eq(smsCampaigns.status, opts.status));
     const where = and(...conds);
     const [rows, [{ total }]] = await Promise.all([
@@ -108,7 +108,7 @@ export const smsCampaignsRepository = {
   async totals(tenantId: string, since: Date) {
     const [row] = await db
       .select({
-        campaigns: count(),
+        campaigns: sql<number>`COALESCE(SUM(${smsCampaigns.automationId} IS NULL),0)`,
         recipients: sql<number>`COALESCE(SUM(${smsCampaigns.totalRecipients}),0)`,
         sent: sql<number>`COALESCE(SUM(${smsCampaigns.sentCount}),0)`,
         delivered: sql<number>`COALESCE(SUM(${smsCampaigns.deliveredCount}),0)`,

@@ -171,6 +171,16 @@ tenant's own knowledge text that hands off when unsure. Rules can add tags, assi
 off. The bot pauses after a person replies (also in Meta's inbox), per-rule cooldowns and a loop guard
 stop runaway replies; agents pause/resume it per chat in the inbox. Test console and activity log included.
 
+**Automation flows** (Marketing → Automation flows): a visual builder for contact journeys. Triggers: a
+contact is added (by source), a tag is added, a group is joined, a WhatsApp message (optional keywords),
+a date such as a birthday (yearly, with day offsets, at a local time) or manual/group/segment enrolment.
+Steps: WhatsApp template or 24-hour-window text, email (visual builder), SMS, waits (delay, time of day,
+weekdays only), if/else branches on contact rules or on what the contact did with an earlier message
+(delivered, read, replied, opened, clicked, failed), tags, groups, custom fields, team notifications,
+webhooks and exit. Sends go through a hidden campaign per step, so the normal workers deliver them with
+rate limits, retries, click/open tracking and unsubscribe handling. Per-step statistics, a per-contact
+run log and re-entry rules are included; runs are processed by the queue workers (database or Redis mode).
+
 **AI assistant** (Anthropic Claude, key set by the superadmin, per access level, monthly request limit):
 drafts SMS, WhatsApp template and email copy (email drafts become builder blocks), suggests inbox
 replies, and summarises conversations with sentiment, intent and urgency. Nothing is sent automatically;

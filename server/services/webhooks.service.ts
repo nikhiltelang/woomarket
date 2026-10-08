@@ -208,12 +208,34 @@ export const webhooksRepository = {
   },
 };
 
+/** In-app consumers of the same events (automation triggers), registered at startup. */
+interface EventListener {
+  on: (tenantId: string, event: WebhookEvent, data: Record<string, unknown>) => void;
+  /** Whether it cares about this event for this tenant (lets bulk paths skip work). */
+  listens: (tenantId: string, event: WebhookEvent) => Promise<boolean>;
+}
+const listeners: EventListener[] = [];
+export function onEvent(l: EventListener) {
+  listeners.push(l);
+}
+export async function hasEventListeners(tenantId: string, event: WebhookEvent): Promise<boolean> {
+  for (const l of listeners) if (await l.listens(tenantId, event).catch(() => false)) return true;
+  return false;
+}
+
 /**
  * Queues `event` for every endpoint of the tenant subscribed to it. Safe to call anywhere:
  * failures are logged, never thrown, and delivery happens in the background.
  */
 export async function emitEvent(tenantId: string | null | undefined, event: WebhookEvent, data: Record<string, unknown>): Promise<number> {
   if (!tenantId) return 0;
+  for (const l of listeners) {
+    try {
+      l.on(tenantId, event, data);
+    } catch (err) {
+      log.warn({ event, err: (err as Error).message }, "Event listener failed");
+    }
+  }
   try {
     const endpoints = await webhooksRepository.subscribed(tenantId, event);
     if (!endpoints.length) return 0;

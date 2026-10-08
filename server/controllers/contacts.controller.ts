@@ -57,6 +57,12 @@ export async function createContact(req: Request, res: Response) {
   res.status(201).json({ data: contact });
 }
 
+/** Tags and groups the update added (automations start on these). */
+function addedTo(before: { tags: string[] | null; groups: string[] | null }, after: { tags: string[] | null; groups: string[] | null }) {
+  const lower = new Set((before.tags ?? []).map((t) => t.toLowerCase()));
+  return { tagsAdded: (after.tags ?? []).filter((t) => !lower.has(t.toLowerCase())), groupsAdded: (after.groups ?? []).filter((g) => !(before.groups ?? []).includes(g)) };
+}
+
 export async function updateContact(req: Request, res: Response) {
   const contact = await loadContact(req);
   const input = parseBody(updateContactSchema, req);
@@ -66,7 +72,7 @@ export async function updateContact(req: Request, res: Response) {
   const updated = await contactsRepository.update(contact.id, { ...input, email: input.email === "" ? null : input.email });
   await activityRepository.record(req, req.user!.id, "contact_updated", { type: "contact", id: contact.id });
   const changed = updated ? changedFields(contact, updated) : [];
-  if (updated && changed.length) emitForChannel(updated.channelId, "contact.updated", { contact: contactData(updated), changed });
+  if (updated && changed.length) emitForChannel(updated.channelId, "contact.updated", { contact: contactData(updated), changed, ...addedTo(contact, updated) });
   res.json({ data: updated });
 }
 

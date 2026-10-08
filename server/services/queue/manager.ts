@@ -22,6 +22,7 @@ import { executeJob, jobs, startScheduler, stopScheduler } from "../../cron/sche
 import { messageQueueWorker } from "../message-queue";
 import { marketingWorker } from "../marketing-worker";
 import { webhookWorker } from "../webhooks.service";
+import { automationWorker } from "../automations.service";
 import { setRealtimeAdapter } from "../realtime";
 import { systemConfig } from "../system-config.service";
 import { setWakeImpl } from "./wake";
@@ -171,6 +172,7 @@ class QueueManager {
     this.since = new Date();
     setWakeImpl((kind) => {
       if (kind === "webhooks") webhookWorker.wake();
+      if (kind === "automations") automationWorker.wake();
     });
     // Without Redis only one server (the cron leader) works, so nothing runs twice.
     if (!config.isCronLeader) {
@@ -180,6 +182,7 @@ class QueueManager {
     messageQueueWorker.start();
     await marketingWorker.start();
     webhookWorker.start();
+    automationWorker.start();
     startScheduler();
     log.info("Queue mode: database polling");
   }
@@ -219,6 +222,7 @@ class QueueManager {
           if (job.name === "whatsapp") return messageQueueWorker.tick();
           if (job.name === "marketing") return marketingWorker.tick();
           if (job.name === "webhooks") return webhookWorker.tick();
+          if (job.name === "automations") return automationWorker.tick();
         },
         { ...opts, connection: this.extra(redis), concurrency: s.concurrency * WORK_KINDS.length },
       ),
@@ -274,7 +278,7 @@ class QueueManager {
     if (this.mode === "database") {
       this.dbStarted = false;
       stopScheduler();
-      await Promise.allSettled([messageQueueWorker.stop(), marketingWorker.stop(), webhookWorker.stop()]);
+      await Promise.allSettled([messageQueueWorker.stop(), marketingWorker.stop(), webhookWorker.stop(), automationWorker.stop()]);
       return;
     }
     if (this.heartbeat) clearInterval(this.heartbeat);

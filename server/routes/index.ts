@@ -18,6 +18,7 @@ import { aiRoutes } from "./ai.routes";
 import { reportRoutes } from "./reports.routes";
 import { widgetRoutes } from "./widget.routes";
 import { chatbotRoutes } from "./chatbot.routes";
+import { automationRoutes } from "./automations.routes";
 import { socialRoutes } from "./social.routes";
 import { whiteLabelPublicRoutes, whiteLabelRoutes } from "./white-label.routes";
 import { templateRoutes } from "./templates.routes";
@@ -70,6 +71,7 @@ export function apiRouter(): Router {
   api.use("/widgets", widgetRoutes);
   api.use("/social-accounts", socialRoutes);
   api.use("/chatbot", chatbotRoutes);
+  api.use("/automations", automationRoutes);
   api.use(whiteLabelRoutes);
   api.use("/templates", templateRoutes);
   api.use("/conversations", conversationRoutes);

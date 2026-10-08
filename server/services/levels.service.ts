@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNull } from "drizzle-orm";
 import { campaigns, channels, conversations, messages, type AccessLevel } from "@shared/schema";
 import { db } from "../db";
 import { forbidden } from "../lib/errors";
@@ -21,7 +21,7 @@ async function tenantChannelIds(tenantId: string) {
 export async function campaignsThisMonth(tenantId: string): Promise<number> {
   const ids = await tenantChannelIds(tenantId);
   if (!ids.length) return 0;
-  const [{ n }] = await db.select({ n: count() }).from(campaigns).where(and(inArray(campaigns.channelId, ids), gte(campaigns.createdAt, monthStart())));
+  const [{ n }] = await db.select({ n: count() }).from(campaigns).where(and(inArray(campaigns.channelId, ids), isNull(campaigns.automationId), gte(campaigns.createdAt, monthStart())));
   return n;
 }
 

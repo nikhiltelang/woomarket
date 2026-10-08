@@ -1,4 +1,4 @@
-import { and, count, eq, gte, lt, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   campaigns,
@@ -22,9 +22,9 @@ export const statsRepository = {
       n(db.select({ n: count() }).from(contacts)),
       n(db.select({ n: count() }).from(templates)),
       n(db.select({ n: count() }).from(templates).where(eq(templates.status, "approved"))),
-      n(db.select({ n: count() }).from(campaigns)),
-      n(db.select({ n: count() }).from(emailCampaigns)),
-      n(db.select({ n: count() }).from(smsCampaigns)),
+      n(db.select({ n: count() }).from(campaigns).where(isNull(campaigns.automationId))),
+      n(db.select({ n: count() }).from(emailCampaigns).where(isNull(emailCampaigns.automationId))),
+      n(db.select({ n: count() }).from(smsCampaigns).where(isNull(smsCampaigns.automationId))),
       n(db.select({ n: count() }).from(platformAccessLevels)),
       n(db.select({ n: count() }).from(plans)),
       n(db.select({ n: count() }).from(policyPages)),

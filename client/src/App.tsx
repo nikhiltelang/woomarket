@@ -57,6 +57,8 @@ const WidgetPage = lazy(() => import("@/pages/widget"));
 const WhiteLabel = lazy(() => import("@/pages/white-label"));
 const SocialPage = lazy(() => import("@/pages/social"));
 const ChatbotPage = lazy(() => import("@/pages/chatbot"));
+const AutomationsPage = lazy(() => import("@/pages/automations"));
+const AutomationBuilder = lazy(() => import("@/pages/automation-builder"));
 const AdminWhiteLabel = lazy(() => import("@/pages/admin/white-label"));
 const Preferences = lazy(() => import("@/pages/preferences"));
 
@@ -93,6 +95,8 @@ const routes: RouteDef[] = [
   { path: "/widget", component: WidgetPage, roles: TENANT, permission: "settings:view", channel: true },
   { path: "/white-label", component: WhiteLabel, roles: ["admin"] },
   { path: "/chatbot", component: ChatbotPage, roles: TENANT, permission: "automations:view" },
+  { path: "/automations", component: AutomationsPage, roles: TENANT, permission: "automations:view" },
+  { path: "/automations/:id", component: AutomationBuilder, roles: TENANT, permission: "automations:view" },
   { path: "/social", component: SocialPage, roles: TENANT, permission: "settings:view", channel: true },
   { path: "/white-label-admin", component: AdminWhiteLabel, roles: SUPER },
   { path: "/account", component: Account },

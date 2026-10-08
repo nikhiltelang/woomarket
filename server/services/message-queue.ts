@@ -87,6 +87,8 @@ export async function completeCampaignIfDone(campaignId: string): Promise<void> 
   // Held recipients still wait for the A/B winner.
   const running = await campaignsRepository.findById(campaignId);
   if ((running?.abTest as { phase?: string } | null)?.phase === "testing") return;
+  // An automation step's campaign keeps sending for as long as the flow exists.
+  if (running?.automationId) return;
   if (await campaignsRepository.transition(campaignId, ["running"], "completed", { completedAt: new Date() })) {
     const campaign = await campaignsRepository.findById(campaignId);
     realtime.toChannel(campaign?.channelId, "campaign_updated", { campaign });

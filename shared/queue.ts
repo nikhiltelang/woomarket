@@ -20,7 +20,7 @@ export const queueSettingsSchema = z.object({
 });
 export type QueueSettingsInput = z.infer<typeof queueSettingsSchema>;
 
-export const WORK_KINDS = ["whatsapp", "marketing", "webhooks"] as const;
+export const WORK_KINDS = ["whatsapp", "marketing", "webhooks", "automations"] as const;
 export type WorkKind = (typeof WORK_KINDS)[number];
 
 export interface QueueStatus {

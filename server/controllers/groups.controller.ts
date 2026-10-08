@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { groupContactsSchema, groupSchema, moveContactsSchema } from "@shared/validation";
-import type { Group } from "@shared/schema";
+import type { Contact, Group } from "@shared/schema";
+import { contactData, emitForChannel, MAX_BULK_EVENTS } from "../services/webhook-events";
 import { parseBody } from "../lib/http";
 import { notFound } from "../lib/errors";
 import { groupsRepository } from "../repositories/groups.repository";
@@ -67,13 +68,21 @@ async function loadContacts(req: Request, ids: string[]) {
   return contacts;
 }
 
+/** contact.updated for contacts that just joined a group (webhooks and automations). */
+function emitJoined(joined: Contact[], groupId: string) {
+  for (const c of joined.slice(0, MAX_BULK_EVENTS)) {
+    const after = { ...c, groups: [...(c.groups ?? []), groupId] };
+    emitForChannel(c.channelId, "contact.updated", { contact: contactData(after), changed: ["groups"], tagsAdded: [], groupsAdded: [groupId] });
+  }
+}
+
 export async function addContacts(req: Request, res: Response) {
   const { groupId, contactIds } = parseBody(groupContactsSchema, req);
   await loadGroup(req, groupId);
   const contacts = await loadContacts(req, contactIds);
-  await contactsRepository.setGroups(
-    contacts.filter((c) => !(c.groups ?? []).includes(groupId)).map((c) => ({ id: c.id, groups: [...(c.groups ?? []), groupId] })),
-  );
+  const joining = contacts.filter((c) => !(c.groups ?? []).includes(groupId));
+  await contactsRepository.setGroups(joining.map((c) => ({ id: c.id, groups: [...(c.groups ?? []), groupId] })));
+  emitJoined(joining, groupId);
   res.json({ success: true, updated: contacts.length });
 }
 
@@ -97,5 +106,6 @@ export async function moveContacts(req: Request, res: Response) {
       return { id: c.id, groups: next };
     }),
   );
+  emitJoined(contacts.filter((c) => !(c.groups ?? []).includes(toGroupId)), toGroupId);
   res.json({ success: true, updated: contacts.length });
 }

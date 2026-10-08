@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { campaignRecipients, campaigns, messageQueue, type Campaign, type CampaignRecipient } from "@shared/schema";
 
@@ -13,7 +13,7 @@ export const campaignsRepository = {
   },
 
   async list(channelId: string, opts: { page: number; limit: number; status?: string }) {
-    const conds: SQL[] = [eq(campaigns.channelId, channelId)];
+    const conds: SQL[] = [eq(campaigns.channelId, channelId), isNull(campaigns.automationId)];
     if (opts.status) conds.push(eq(campaigns.status, opts.status));
     const where = and(...conds);
     const [rows, [{ total }]] = await Promise.all([
@@ -84,7 +84,7 @@ export const campaignsRepository = {
     const [{ n }] = await db
       .select({ n: count() })
       .from(campaigns)
-      .where(and(inArray(campaigns.channelId, channelIds), sql`${campaigns.createdAt} >= ${since}`));
+      .where(and(inArray(campaigns.channelId, channelIds), isNull(campaigns.automationId), sql`${campaigns.createdAt} >= ${since}`));
     return n;
   },
 

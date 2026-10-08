@@ -10,7 +10,7 @@ import { childLogger } from "../lib/logger";
 import { channelsRepository } from "../repositories/channels.repository";
 import { emailCampaignsRepository } from "../repositories/email.repository";
 import { smsCampaignsRepository } from "../repositories/sms.repository";
-import { emit, webhooksRepository } from "./webhooks.service";
+import { emit, hasEventListeners, webhooksRepository } from "./webhooks.service";
 
 const log = childLogger("webhook-events");
 /** An import or API batch emits at most this many contact.created events. */
@@ -54,7 +54,8 @@ export function emitForChannel(channelId: string | null | undefined, event: Webh
 export async function hasSubscribers(tenantId: string | null | undefined, event: WebhookEvent): Promise<boolean> {
   if (!tenantId) return false;
   try {
-    return (await webhooksRepository.subscribed(tenantId, event)).length > 0;
+    // Automations listening for the event count too.
+    return (await webhooksRepository.subscribed(tenantId, event)).length > 0 || (await hasEventListeners(tenantId, event));
   } catch {
     return false;
   }

@@ -96,6 +96,8 @@ export async function changeEmailCampaignStatus(c: EmailCampaign, to: "paused" |
 
 export async function completeEmailCampaignIfDone(id: string): Promise<void> {
   if ((await emailCampaignsRepository.pendingCount(id)) > 0) return;
+  // An automation step's campaign keeps sending for as long as the flow exists.
+  if ((await emailCampaignsRepository.find(id))?.automationId) return;
   if (await emailCampaignsRepository.transition(id, ["sending"], "sent", { sentAt: new Date() })) {
     log.info({ campaignId: id }, "Email campaign sent");
     const c = await emailCampaignsRepository.find(id);
@@ -189,6 +191,7 @@ export async function changeSmsCampaignStatus(c: SmsCampaign, to: "paused" | "se
 
 export async function completeSmsCampaignIfDone(id: string): Promise<void> {
   if ((await smsCampaignsRepository.pendingCount(id)) > 0) return;
+  if ((await smsCampaignsRepository.find(id))?.automationId) return;
   if (await smsCampaignsRepository.transition(id, ["sending"], "sent", { sentAt: new Date() })) {
     log.info({ campaignId: id }, "SMS campaign sent");
     const c = await smsCampaignsRepository.find(id);

@@ -11,6 +11,7 @@ import { decideDueTests } from "../services/ab-test.service";
 import { webhooksRepository } from "../services/webhooks.service";
 import { runDueSchedules } from "../services/report-schedules.service";
 import { chatbotRepository } from "../services/chatbot.service";
+import { runDateTriggers } from "../services/automations.service";
 import { queueRepository } from "../services/message-queue";
 import { emailCampaignsRepository } from "../repositories/email.repository";
 import { smsCampaignsRepository } from "../repositories/sms.repository";
@@ -91,6 +92,13 @@ export const jobs: Job[] = [
     description: "Deletes outgoing webhook delivery records older than 30 days.",
     intervalMs: 24 * 60 * 60 * 1000,
     run: async () => `${await webhooksRepository.deleteOldDeliveries(new Date(Date.now() - 30 * 86_400_000))} delivery record(s) deleted`,
+  },
+  {
+    key: "automation-date-triggers",
+    name: "Automation date triggers",
+    description: "Enrols contacts into flows started by a date (birthdays, anniversaries) at each flow's local time.",
+    intervalMs: 10 * 60 * 1000,
+    run: async () => `${await runDateTriggers()} contact(s) enrolled`,
   },
   {
     key: "chatbot-activity-cleanup",
