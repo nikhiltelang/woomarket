@@ -123,19 +123,23 @@ export const session = mysqlTable("session", {
   expire: ts("expire").notNull(),
 });
 
-export const userActivityLogs = mysqlTable("user_activity_logs", {
-  id: id(),
-  userId: char("user_id", { length: 36 })
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  action: text("action").notNull(),
-  entityType: text("entity_type"),
-  entityId: varchar("entity_id", { length: 255 }),
-  details: jsonObject<Record<string, unknown>>("details"),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: createdAt(),
-});
+export const userActivityLogs = mysqlTable(
+  "user_activity_logs",
+  {
+    id: id(),
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    entityType: text("entity_type"),
+    entityId: varchar("entity_id", { length: 255 }),
+    details: jsonObject<Record<string, unknown>>("details"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("activity_entity_idx").on(t.entityId)],
+);
 
 // ---------------------------------------------------------------------------
 // Templates & API logs
@@ -558,6 +562,10 @@ export const subscriptions = mysqlTable("subscriptions", {
   amount: decimal("amount", { precision: 10, scale: 2 }),
   discount: decimal("discount", { precision: 10, scale: 2 }).default("0"),
   couponCode: varchar("coupon_code", { length: 40 }),
+  /** Self-serve payment that bought this period. */
+  paymentId: char("payment_id", { length: 36 }),
+  /** Last expiry reminder sent: "7d", "1d" or "expired". */
+  reminderStage: varchar("reminder_stage", { length: 10 }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -723,6 +731,7 @@ export const emailCampaignRecipients = mysqlTable(
     index("email_recipients_campaign_idx").on(t.campaignId),
     index("email_recipients_status_idx").on(t.status),
     index("email_recipients_message_idx").on(t.messageId),
+    index("email_recipients_contact_idx").on(t.contactId),
   ],
 );
 
@@ -825,7 +834,7 @@ export const smsCampaignRecipients = mysqlTable(
     errorMessage: text("error_message"),
     createdAt: createdAt(),
   },
-  (t) => [index("sms_recipients_campaign_idx").on(t.campaignId), index("sms_recipients_status_idx").on(t.status)],
+  (t) => [index("sms_recipients_campaign_idx").on(t.campaignId), index("sms_recipients_status_idx").on(t.status), index("sms_recipients_contact_idx").on(t.contactId)],
 );
 
 // ---------------------------------------------------------------------------
@@ -877,6 +886,16 @@ export interface ExtensionSettings {
   queue?: { enabled: boolean; url?: string; prefix: string; concurrency: number };
   /** Meta app for WhatsApp Embedded Signup. appSecret is encrypted. */
   whatsappSignup?: { enabled: boolean; appId: string; appSecret?: string; configId: string; coexistence: boolean };
+  /** Self-serve billing. Secrets are encrypted. */
+  payments?: {
+    stripe: { enabled: boolean; publishableKey: string; secretKey?: string; webhookSecret?: string };
+    razorpay: { enabled: boolean; keyId: string; keySecret?: string; webhookSecret?: string };
+    taxRate: number;
+    taxLabel: string;
+    invoiceDetails: string;
+    trialPlanId?: string | null;
+    trialDays: number;
+  };
 }
 
 export const systemConfigurations = mysqlTable("system_configurations", {
@@ -1744,6 +1763,78 @@ export const automationStepLogs = mysqlTable(
 );
 export type AutomationStepLog = InferSelectModel<typeof automationStepLogs>;
 
+// ---------------------------------------------------------------------------
+// Self-serve payments
+// ---------------------------------------------------------------------------
+
+export const payments = mysqlTable(
+  "payments",
+  {
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    planId: char("plan_id", { length: 36 }).references(() => plans.id, { onDelete: "set null" }),
+    planName: varchar("plan_name", { length: 255 }).notNull(),
+    billingCycle: varchar("billing_cycle", { length: 10 }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(),
+    price: decimal("price", { precision: 12, scale: 2 }).notNull(),
+    discount: decimal("discount", { precision: 12, scale: 2 }).notNull().default("0"),
+    credit: decimal("credit", { precision: 12, scale: 2 }).notNull().default("0"),
+    tax: decimal("tax", { precision: 12, scale: 2 }).notNull().default("0"),
+    taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).notNull().default("0"),
+    taxLabel: varchar("tax_label", { length: 30 }),
+    total: decimal("total", { precision: 12, scale: 2 }).notNull(),
+    couponCode: varchar("coupon_code", { length: 40 }),
+    /** stripe | razorpay | simulator */
+    provider: varchar("provider", { length: 12 }).notNull(),
+    /** Stripe Checkout Session id / Razorpay order id. */
+    providerRef: varchar("provider_ref", { length: 255 }),
+    /** Stripe PaymentIntent / Razorpay payment id. */
+    providerPaymentId: varchar("provider_payment_id", { length: 255 }),
+    /** pending | paid | failed | expired | refunded */
+    status: varchar("status", { length: 12 }).notNull().default("pending"),
+    failureReason: varchar("failure_reason", { length: 500 }),
+    /** The period this payment bought. */
+    subscriptionId: char("subscription_id", { length: 36 }),
+    invoiceYear: int("invoice_year"),
+    invoiceSeq: int("invoice_seq"),
+    invoiceNumber: varchar("invoice_number", { length: 30 }),
+    /** Billing name and email at the time of purchase (for the invoice). */
+    billedTo: json("billed_to").$type<{ name: string; email: string; company?: string | null }>(),
+    paidAt: ts("paid_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("payments_user_idx").on(t.userId, t.createdAt),
+    index("payments_ref_idx").on(t.provider, t.providerRef),
+    uniqueIndex("payments_invoice_unique").on(t.invoiceYear, t.invoiceSeq),
+    index("payments_status_idx").on(t.status, t.createdAt),
+  ],
+);
+export type Payment = InferSelectModel<typeof payments>;
+
+// ---------------------------------------------------------------------------
+// Contact notes (timeline)
+// ---------------------------------------------------------------------------
+
+export const contactNotes = mysqlTable(
+  "contact_notes",
+  {
+    id: id(),
+    contactId: char("contact_id", { length: 36 })
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    userId: char("user_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("contact_notes_contact_idx").on(t.contactId, t.createdAt)],
+);
+export type ContactNote = InferSelectModel<typeof contactNotes>;
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -1810,6 +1901,8 @@ export const MANAGED_TABLES = [
   "automations",
   "automation_runs",
   "automation_step_logs",
+  "payments",
+  "contact_notes",
 ] as const;
 
 // ---------------------------------------------------------------------------

@@ -3,9 +3,11 @@ import { config } from "../config";
 import { maskRedisUrl, queueSettingsSchema } from "@shared/queue";
 import { queueManager, queueSettings, testRedis } from "../services/queue/manager";
 import { usersRepository } from "../repositories/users.repository";
+import { billingRepository } from "../repositories/billing.repository";
 import { agencyOf, brandsRepository, toPublicBrand } from "../services/white-label.service";
 import { aiSettingsSchema, DEFAULT_AI_MODEL, DEFAULT_AI_MONTHLY_LIMIT } from "@shared/ai";
 import { signupSettingsSchema } from "@shared/whatsapp-signup";
+import { paymentSettingsSchema } from "@shared/billing";
 import { z } from "zod";
 import {
   brandingSchema,
@@ -47,6 +49,18 @@ function adminView(s: SystemConfig) {
         const q = s.extensionSettings?.queue;
         const url = q?.url ? decryptStoredSecret(q.url) : null;
         return { enabled: q ? q.enabled : Boolean(config.REDIS_URL), prefix: q?.prefix ?? "wm360", concurrency: q?.concurrency ?? 2, urlMasked: url ? maskRedisUrl(url) : null, envUrl: config.REDIS_URL ? maskRedisUrl(config.REDIS_URL) : null };
+      })(),
+      payments: (() => {
+        const p = s.extensionSettings?.payments;
+        return {
+          stripe: { enabled: Boolean(p?.stripe?.enabled), publishableKey: p?.stripe?.publishableKey ?? "", hasSecretKey: Boolean(p?.stripe?.secretKey), hasWebhookSecret: Boolean(p?.stripe?.webhookSecret) },
+          razorpay: { enabled: Boolean(p?.razorpay?.enabled), keyId: p?.razorpay?.keyId ?? "", hasKeySecret: Boolean(p?.razorpay?.keySecret), hasWebhookSecret: Boolean(p?.razorpay?.webhookSecret) },
+          taxRate: p?.taxRate ?? 0,
+          taxLabel: p?.taxLabel ?? "Tax",
+          invoiceDetails: p?.invoiceDetails ?? "",
+          trialPlanId: p?.trialPlanId ?? null,
+          trialDays: p?.trialDays ?? 0,
+        };
       })(),
       whatsappSignup: (() => {
         const w = s.extensionSettings?.whatsappSignup;
@@ -114,6 +128,7 @@ const SECTIONS = {
   "social-login": socialLoginSchema,
   "ai-assistant": aiSettingsSchema,
   "whatsapp-signup": signupSettingsSchema,
+  payments: paymentSettingsSchema,
   queue: queueSettingsSchema,
   maintenance: maintenanceSchema,
   "gdpr-cookie": gdprCookieSchema,
@@ -153,6 +168,18 @@ export async function updateSection(req: Request, res: Response) {
       const url = input.url ? encryptStoredSecret(input.url) : prev?.url;
       if (input.enabled && !url && !config.REDIS_URL) throw badRequest("Enter the Redis URL to turn Redis mode on");
       patch = { extensionSettings: { ...current.extensionSettings, queue: { enabled: input.enabled, url, prefix: input.prefix, concurrency: input.concurrency } } };
+      break;
+    }
+    case "payments": {
+      const prev = current.extensionSettings?.payments;
+      const keep = (v: string | undefined, old: string | undefined) => (v ? encryptStoredSecret(v) : old);
+      const stripe = { enabled: input.stripe.enabled, publishableKey: input.stripe.publishableKey, secretKey: keep(input.stripe.secretKey, prev?.stripe?.secretKey), webhookSecret: keep(input.stripe.webhookSecret, prev?.stripe?.webhookSecret) };
+      const razorpay = { enabled: input.razorpay.enabled, keyId: input.razorpay.keyId, keySecret: keep(input.razorpay.keySecret, prev?.razorpay?.keySecret), webhookSecret: keep(input.razorpay.webhookSecret, prev?.razorpay?.webhookSecret) };
+      if (stripe.enabled && !stripe.secretKey) throw badRequest("Enter the Stripe secret key to turn Stripe on");
+      if (stripe.secretKey && input.stripe.secretKey && !/^(sk|rk)_(test|live)_/.test(input.stripe.secretKey)) throw badRequest("The Stripe secret key starts with sk_live_ or sk_test_");
+      if (razorpay.enabled && (!razorpay.keyId || !razorpay.keySecret)) throw badRequest("Enter the Razorpay key id and key secret to turn Razorpay on");
+      if (input.trialDays > 0 && input.trialPlanId && !(await billingRepository.findPlan(input.trialPlanId))) throw badRequest("The trial plan doesn't exist");
+      patch = { extensionSettings: { ...current.extensionSettings, payments: { stripe, razorpay, taxRate: input.taxRate, taxLabel: input.taxLabel, invoiceDetails: input.invoiceDetails, trialPlanId: input.trialPlanId ?? null, trialDays: input.trialDays } } };
       break;
     }
     case "whatsapp-signup": {

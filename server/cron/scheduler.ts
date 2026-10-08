@@ -12,6 +12,7 @@ import { webhooksRepository } from "../services/webhooks.service";
 import { runDueSchedules } from "../services/report-schedules.service";
 import { chatbotRepository } from "../services/chatbot.service";
 import { runDateTriggers } from "../services/automations.service";
+import { runBillingCycle } from "../services/billing.service";
 import { queueRepository } from "../services/message-queue";
 import { emailCampaignsRepository } from "../repositories/email.repository";
 import { smsCampaignsRepository } from "../repositories/sms.repository";
@@ -92,6 +93,13 @@ export const jobs: Job[] = [
     description: "Deletes outgoing webhook delivery records older than 30 days.",
     intervalMs: 24 * 60 * 60 * 1000,
     run: async () => `${await webhooksRepository.deleteOldDeliveries(new Date(Date.now() - 30 * 86_400_000))} delivery record(s) deleted`,
+  },
+  {
+    key: "billing-renewals",
+    name: "Plan renewals & expiry",
+    description: "Reminds tenants 7 days and 1 day before a paid plan or trial ends, moves expired accounts to the Free plan and gives up unfinished checkouts.",
+    intervalMs: 6 * 60 * 60 * 1000,
+    run: () => runBillingCycle(),
   },
   {
     key: "automation-date-triggers",

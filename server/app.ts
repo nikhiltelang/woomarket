@@ -48,12 +48,12 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
             directives: {
               defaultSrc: ["'self'"],
               // Facebook SDK for WhatsApp Embedded Signup.
-              scriptSrc: ["'self'", "https://connect.facebook.net"],
-              frameSrc: ["'self'", "https://*.facebook.com"],
+              scriptSrc: ["'self'", "https://connect.facebook.net", "https://checkout.razorpay.com"],
+              frameSrc: ["'self'", "https://*.facebook.com", "https://*.razorpay.com"],
               styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
               fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
               imgSrc: ["'self'", "data:", "blob:", "https:"],
-              connectSrc: ["'self'", "ws:", "wss:", "https://*.facebook.com"],
+              connectSrc: ["'self'", "ws:", "wss:", "https://*.facebook.com", "https://*.razorpay.com"],
               frameAncestors: ["*"],
             },
           }

@@ -6,7 +6,9 @@ import { bulkIdsSchema, contactListQuery, contactSchema, updateContactSchema } f
 import type { Contact, ContactFields } from "@shared/schema";
 import { contactFieldsSchema, normalizeFieldKey, RESERVED_FIELD_KEYS } from "@shared/contact-fields";
 import { paginated, parse, parseBody, parseQuery } from "../lib/http";
-import { badRequest, conflict, notFound } from "../lib/errors";
+import { badRequest, conflict, forbidden, notFound } from "../lib/errors";
+import { noteSchema, timelineQuery } from "@shared/timeline";
+import { contactSummary, contactTimeline, notesRepository } from "../services/timeline.service";
 import { contactsRepository } from "../repositories/contacts.repository";
 import { activityRepository } from "../repositories/activity.repository";
 import { assertChannelAccess } from "../middlewares/tenant";
@@ -70,10 +72,40 @@ export async function updateContact(req: Request, res: Response) {
     throw conflict("A contact with this phone number already exists on this channel", "DUPLICATE_PHONE");
   }
   const updated = await contactsRepository.update(contact.id, { ...input, email: input.email === "" ? null : input.email });
-  await activityRepository.record(req, req.user!.id, "contact_updated", { type: "contact", id: contact.id });
   const changed = updated ? changedFields(contact, updated) : [];
+  await activityRepository.record(req, req.user!.id, "contact_updated", { type: "contact", id: contact.id }, { fields: changed });
   if (updated && changed.length) emitForChannel(updated.channelId, "contact.updated", { contact: contactData(updated), changed, ...addedTo(contact, updated) });
   res.json({ data: updated });
+}
+
+/** GET /api/contacts/:id/timeline?before=&kinds=message,email,…&limit= */
+export async function timeline(req: Request, res: Response) {
+  const contact = await loadContact(req);
+  const q = parseQuery(timelineQuery, req);
+  res.json({ data: await contactTimeline(contact, q) });
+}
+
+export async function summary(req: Request, res: Response) {
+  const contact = await loadContact(req);
+  res.json({ data: await contactSummary(contact) });
+}
+
+export async function addNote(req: Request, res: Response) {
+  const contact = await loadContact(req);
+  const { body } = parseBody(noteSchema, req);
+  const note = await notesRepository.create(contact.id, req.user!.id, body);
+  res.status(201).json({ data: note });
+}
+
+/** Authors delete their own notes; admins any note. */
+export async function deleteNote(req: Request, res: Response) {
+  const contact = await loadContact(req);
+  const note = await notesRepository.find(req.params.noteId);
+  if (!note || note.contactId !== contact.id) throw notFound("Note");
+  if (note.userId !== req.user!.id && req.user!.role !== "admin") throw forbidden("Only the author or an admin can delete this note");
+  await notesRepository.delete(note.id);
+  await activityRepository.record(req, req.user!.id, "contact_note_deleted", { type: "contact", id: contact.id });
+  res.status(204).end();
 }
 
 export async function deleteContact(req: Request, res: Response) {

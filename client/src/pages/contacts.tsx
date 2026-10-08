@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -22,9 +22,9 @@ import { CustomFieldsEditor, fieldRowError, metadataFromRows, rowsFromMetadata, 
 import { fieldLabel } from "@shared/contact-fields";
 
 type ContactForm = z.input<typeof contactSchema>;
-type GroupRow = Group & { contactCount: number };
+export type GroupRow = Group & { contactCount: number };
 
-function ContactDialog({ open, onClose, contact, groups }: { open: boolean; onClose: () => void; contact: Contact | null; groups: GroupRow[] }) {
+export function ContactDialog({ open, onClose, contact, groups }: { open: boolean; onClose: () => void; contact: Contact | null; groups: GroupRow[] }) {
   const { activeChannel } = useChannel();
   const toast = useToast();
   const form = useForm<ContactForm>({ resolver: zodResolver(contactSchema) });
@@ -450,7 +450,7 @@ export default function ContactsPage() {
                       />
                     </Td>
                     <Td>
-                      <p className="font-medium">{c.name}</p>
+                      <Link href={`/contacts/${c.id}`} className="font-medium hover:text-primary hover:underline">{c.name}</Link>
                       {c.email && <p className="text-xs text-fg-muted">{c.email}</p>}
                       {c.metadata && Object.keys(c.metadata).length > 0 && (
                         <p className="mt-0.5 max-w-xs truncate text-xs text-fg-muted" title={Object.entries(c.metadata).map(([k, v]) => `${fieldLabel(k)}: ${v}`).join("\n")}>

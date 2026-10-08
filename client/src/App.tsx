@@ -45,6 +45,8 @@ const AdminChannels = lazy(() => import("@/pages/admin/channels"));
 const AdminPlans = lazy(() => import("@/pages/admin/plans"));
 const AppUpdate = lazy(() => import("@/pages/admin/app-update"));
 const Coupons = lazy(() => import("@/pages/admin/coupons"));
+const AdminPayments = lazy(() => import("@/pages/admin/payments"));
+const ContactProfile = lazy(() => import("@/pages/contact-profile"));
 const SupportRequests = lazy(() => import("@/pages/admin/support-requests"));
 const SystemInfo = lazy(() => import("@/pages/admin/system-info"));
 const CachePage = lazy(() => import("@/pages/admin/cache"));
@@ -77,6 +79,7 @@ const routes: RouteDef[] = [
   { path: "/dashboard", component: Dashboard, roles: TENANT },
   { path: "/inbox", component: Inbox, roles: TENANT, permission: "inbox:view", channel: true },
   { path: "/contacts", component: Contacts, roles: TENANT, permission: "contacts:view", channel: true },
+  { path: "/contacts/:id", component: ContactProfile, roles: TENANT, permission: "contacts:view", channel: true },
   { path: "/groups", component: Groups, roles: TENANT, permission: "contacts:view", channel: true },
   { path: "/segments", component: Segments, roles: TENANT, permission: "contacts:view", channel: true },
   { path: "/templates", component: Templates, roles: TENANT, permission: "templates:view", channel: true },
@@ -107,6 +110,7 @@ const routes: RouteDef[] = [
   { path: "/channels-management", component: AdminChannels, roles: SUPER },
   { path: "/master-subscriptions", component: AdminPlans, roles: SUPER },
   { path: "/manage-coupons", component: Coupons, roles: SUPER },
+  { path: "/admin/payments", component: AdminPayments, roles: SUPER },
   { path: "/report-request", component: SupportRequests, roles: SUPER },
   { path: "/extra/application", component: () => <SystemInfo kind="application" />, roles: SUPER },
   { path: "/extra/server", component: () => <SystemInfo kind="server" />, roles: SUPER },

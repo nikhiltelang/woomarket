@@ -157,6 +157,23 @@ zone, A/B tests on all three channels (winner picked automatically by open, clic
 re-evaluated at send time) and a **drag-and-drop email builder** (table-based, mobile-friendly HTML
 generated on the server from the design, image upload).
 
+**Plans & billing (self-serve):** tenants buy, renew, upgrade or downgrade plans from Plan & billing,
+paying for a month or a year up front with **Stripe Checkout** or **Razorpay Checkout** (UPI, cards,
+netbanking). Coupons, credit for unused time when switching plans, a configurable tax line (e.g. GST)
+and sequential PDF invoices (INV-YYYY-NNNNNN, emailed with the receipt) are included. Payments are
+confirmed by signed gateway webhooks (`/webhooks/stripe`, `/webhooks/razorpay`), by the Razorpay
+checkout signature, or by asking the gateway when the tenant returns. Reminders go out 7 days and 1 day
+before a paid plan or trial ends; expired accounts move to the Free plan. New sign-ups can get a free
+trial of any plan. The superadmin configures gateways, tax, invoice details and trials under System
+settings → Payments and sees all payments under Payments. Plans don't renew automatically (prepaid).
+Without a gateway, development servers offer a test payment.
+
+**Contact profile & timeline:** each contact has a page (Contacts → click a name, or the name in the
+inbox) with their details, engagement stats and one timeline of everything that happened: WhatsApp,
+website, Messenger and Instagram messages, campaign and flow emails and SMS (with opened / clicked /
+delivered), flows entered and finished, changes by teammates, and team notes. Filter by type and page
+back through history; add the contact to a flow from there.
+
 **Connecting WhatsApp numbers:** tenants use **Embedded Signup** (Channel settings → Connect number →
 "Connect with Facebook"): Meta's popup returns a code that the server exchanges for the business's token,
 then it subscribes the app to the WhatsApp Business Account and registers the number with a two-step PIN

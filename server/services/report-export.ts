@@ -75,10 +75,10 @@ const RULE = "#e5e7eb";
 // Noto Sans (SIL OFL, assets/fonts) covers Latin, Greek, Cyrillic, Devanagari and "₹". Without the
 // files we fall back to the PDF standard fonts, which only know Western European characters.
 const FONT_DIR = path.resolve(process.cwd(), "assets/fonts");
-const NOTO = { regular: path.join(FONT_DIR, "NotoSans-Regular.ttf"), bold: path.join(FONT_DIR, "NotoSans-Bold.ttf") };
+export const NOTO = { regular: path.join(FONT_DIR, "NotoSans-Regular.ttf"), bold: path.join(FONT_DIR, "NotoSans-Bold.ttf") };
 type CoverageFont = { hasGlyphForCodePoint(cp: number): boolean };
 let coverage: CoverageFont | null | undefined;
-function unicodeFont(): CoverageFont | null {
+export function unicodeFont(): CoverageFont | null {
   if (coverage === undefined) {
     try {
       coverage = fs.existsSync(NOTO.regular) && fs.existsSync(NOTO.bold) ? (fontkit.openSync(NOTO.regular) as unknown as CoverageFont) : null;
@@ -90,13 +90,14 @@ function unicodeFont(): CoverageFont | null {
 }
 
 /** Replaces characters the PDF font can't draw (they'd show as empty boxes) with "?". */
-function pdfText(s: string): string {
+export function pdfText(s: string): string {
   const font = unicodeFont();
-  if (!font) return s.replace(/[^\x20-\x7E\xA0-\xFF–—‘’“”•…]/g, "?");
+  if (!font) return s.replace(/[^\n\x20-\x7E\xA0-\xFF–—‘’“”•…]/g, "?");
   // Zero-width joiners steer Devanagari shaping and need no glyph of their own.
   return Array.from(s, (ch) => {
     const cp = ch.codePointAt(0)!;
-    return cp === 0x200c || cp === 0x200d || font.hasGlyphForCodePoint(cp) ? ch : "?";
+    // Line breaks are layout, not glyphs.
+    return cp === 0x0a || cp === 0x200c || cp === 0x200d || font.hasGlyphForCodePoint(cp) ? ch : "?";
   }).join("");
 }
 

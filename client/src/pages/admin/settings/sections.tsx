@@ -437,6 +437,80 @@ function QueueForm({ c }: { c: SystemConfigResponse }) {
   );
 }
 
+// --- Payments ------------------------------------------------------------------------------------
+
+function PaymentsForm({ c }: { c: SystemConfigResponse }) {
+  const p = c.data.extensionSettings.payments;
+  const plans = useQuery<{ data: { id: string; name: string }[] }>({ queryKey: ["/api/admin/plans"] });
+  const [v, setV] = useState({
+    stripe: { enabled: p.stripe.enabled, publishableKey: p.stripe.publishableKey, secretKey: "", webhookSecret: "" },
+    razorpay: { enabled: p.razorpay.enabled, keyId: p.razorpay.keyId, keySecret: "", webhookSecret: "" },
+    taxRate: p.taxRate,
+    taxLabel: p.taxLabel,
+    invoiceDetails: p.invoiceDetails,
+    trialPlanId: p.trialPlanId ?? "",
+    trialDays: p.trialDays,
+  });
+  const save = useSaveSection("payments", "Payment settings saved");
+  const base = typeof location !== "undefined" ? location.origin : "";
+  const strip = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(Object.entries(o).filter(([, x]) => x !== "")) as T;
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionCard>
+        <div className="flex max-w-2xl flex-col gap-5">
+          <p className="text-sm text-fg-muted">Tenants pay for a month or a year up front (in {c.data.currency}, set under General setting) and renew from Plan &amp; billing. Without a gateway, development servers offer a test payment.</p>
+          <Switch label="Stripe" description="Cards, Apple Pay, Google Pay and local methods through Stripe Checkout." checked={v.stripe.enabled} onChange={(enabled) => setV({ ...v, stripe: { ...v.stripe, enabled } })} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Secret key" htmlFor="pay-sk" hint={p.stripe.hasSecretKey ? "Saved (encrypted). Leave blank to keep it." : "sk_live_… or sk_test_…"}>
+              <Input id="pay-sk" type="password" autoComplete="off" value={v.stripe.secretKey} onChange={(e) => setV({ ...v, stripe: { ...v.stripe, secretKey: e.target.value.trim() } })} />
+            </Field>
+            <Field label="Webhook signing secret" htmlFor="pay-swh" hint={p.stripe.hasWebhookSecret ? "Saved. Leave blank to keep it." : "whsec_…"}>
+              <Input id="pay-swh" type="password" autoComplete="off" value={v.stripe.webhookSecret} onChange={(e) => setV({ ...v, stripe: { ...v.stripe, webhookSecret: e.target.value.trim() } })} />
+            </Field>
+          </div>
+          <p className="-mt-2 text-xs text-fg-muted">Stripe Dashboard → Developers → Webhooks: endpoint <code>{base}/webhooks/stripe</code> with <code>checkout.session.completed</code>, <code>checkout.session.async_payment_succeeded</code>, <code>checkout.session.async_payment_failed</code> and <code>checkout.session.expired</code>.</p>
+          <Switch label="Razorpay" description="UPI, cards, netbanking and wallets (India) through Razorpay Checkout." checked={v.razorpay.enabled} onChange={(enabled) => setV({ ...v, razorpay: { ...v.razorpay, enabled } })} />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Key id" htmlFor="pay-rk"><Input id="pay-rk" value={v.razorpay.keyId} onChange={(e) => setV({ ...v, razorpay: { ...v.razorpay, keyId: e.target.value.trim() } })} placeholder="rzp_live_…" /></Field>
+            <Field label="Key secret" htmlFor="pay-rs" hint={p.razorpay.hasKeySecret ? "Saved. Leave blank to keep it." : undefined}>
+              <Input id="pay-rs" type="password" autoComplete="off" value={v.razorpay.keySecret} onChange={(e) => setV({ ...v, razorpay: { ...v.razorpay, keySecret: e.target.value.trim() } })} />
+            </Field>
+            <Field label="Webhook secret" htmlFor="pay-rwh" hint={p.razorpay.hasWebhookSecret ? "Saved. Leave blank to keep it." : undefined}>
+              <Input id="pay-rwh" type="password" autoComplete="off" value={v.razorpay.webhookSecret} onChange={(e) => setV({ ...v, razorpay: { ...v.razorpay, webhookSecret: e.target.value.trim() } })} />
+            </Field>
+          </div>
+          <p className="-mt-2 text-xs text-fg-muted">Razorpay Dashboard → Webhooks: URL <code>{base}/webhooks/razorpay</code> with <code>payment.captured</code>, <code>order.paid</code> and <code>payment.failed</code>. Prices must be in a currency your Razorpay account accepts (usually INR).</p>
+        </div>
+      </SectionCard>
+      <SectionCard>
+        <div className="flex max-w-2xl flex-col gap-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tax rate (%)" htmlFor="pay-tax" hint="Added on top of plan prices. 0 for none."><Input id="pay-tax" type="number" min={0} max={50} step="0.01" value={v.taxRate} onChange={(e) => setV({ ...v, taxRate: Number(e.target.value) })} /></Field>
+            <Field label="Tax name" htmlFor="pay-taxl"><Input id="pay-taxl" value={v.taxLabel} onChange={(e) => setV({ ...v, taxLabel: e.target.value })} placeholder="GST" maxLength={30} /></Field>
+          </div>
+          <Field label="Seller details on invoices" htmlFor="pay-inv" hint="Legal name, address, tax registration number (e.g. GSTIN, VAT ID).">
+            <Textarea id="pay-inv" rows={4} value={v.invoiceDetails} onChange={(e) => setV({ ...v, invoiceDetails: e.target.value })} maxLength={1000} />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Free trial for new sign-ups" htmlFor="pay-trial">
+              <Select id="pay-trial" value={v.trialPlanId} onChange={(e) => setV({ ...v, trialPlanId: e.target.value })}>
+                <option value="">No trial (start on the Free plan)</option>
+                {(plans.data?.data ?? []).map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Trial length (days)" htmlFor="pay-days"><Input id="pay-days" type="number" min={0} max={90} value={v.trialDays} disabled={!v.trialPlanId} onChange={(e) => setV({ ...v, trialDays: Number(e.target.value) })} /></Field>
+          </div>
+          <p className="text-xs text-fg-muted">Tenants get reminders 7 days and 1 day before a paid plan or trial ends; afterwards their account moves to the Free plan.</p>
+        </div>
+        <SaveBar
+          pending={save.isPending}
+          onSave={() => save.mutate({ stripe: strip(v.stripe), razorpay: strip(v.razorpay), taxRate: v.taxRate, taxLabel: v.taxLabel, invoiceDetails: v.invoiceDetails, trialPlanId: v.trialPlanId || null, trialDays: v.trialPlanId ? v.trialDays : 0 })}
+        />
+      </SectionCard>
+    </div>
+  );
+}
+
 // --- WhatsApp Embedded Signup -------------------------------------------------------------------
 
 function WhatsappSignupForm({ c }: { c: SystemConfigResponse }) {
@@ -626,6 +700,7 @@ export const SECTIONS: Record<string, { title: string; description: string; rend
   seo: { title: "SEO configuration", description: "Injected into every page served by the app.", render: (c) => <SeoForm c={c} /> },
   frontend: { title: "Manage frontend", description: "Content of the public sign-in and sign-up pages.", render: (c) => <FrontendForm c={c} /> },
   queue: { title: "Queue & scaling", description: "Optional Redis / BullMQ for running several servers.", render: (c) => <QueueForm c={c} /> },
+  payments: { title: "Payments", description: "Online checkout, tax, invoices and free trials.", render: (c) => <PaymentsForm c={c} /> },
   "whatsapp-signup": { title: "WhatsApp Embedded Signup", description: "Connect WhatsApp numbers with Facebook, including Coexistence.", render: (c) => <WhatsappSignupForm c={c} /> },
   "ai-assistant": { title: "AI assistant", description: "Claude-powered drafting, reply suggestions and summaries.", render: (c) => <AiAssistantForm c={c} /> },
   "social-login": { title: "Social login setting", description: "Single sign-on with Google and Microsoft.", render: (c) => <SocialLoginForm c={c} /> },

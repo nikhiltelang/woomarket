@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isSocialType, SOCIAL_LABELS, type PublicSocialAccount } from "@shared/social";
 import { AiInsightsPanel, AiReplySuggestions, IntentBadge } from "@/components/ai";
@@ -388,7 +389,13 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
           </button>
           <Avatar name={c.contactName ?? c.contactPhone ?? "?"} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{c.contactName ?? c.contactPhone}</p>
+            {c.contactId && can("contacts:view") ? (
+              <Link href={`/contacts/${c.contactId}`} className="block truncate text-sm font-semibold hover:text-primary hover:underline" title="Open contact profile and timeline">
+                {c.contactName ?? c.contactPhone}
+              </Link>
+            ) : (
+              <p className="truncate text-sm font-semibold">{c.contactName ?? c.contactPhone}</p>
+            )}
             <p className="truncate text-xs text-fg-muted">
               {c.contactPhone}
               {typing && <span className="ml-2 text-primary">{typing} is typing…</span>}

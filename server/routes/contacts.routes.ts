@@ -14,6 +14,11 @@ contactRoutes.get("/contacts/export", requirePermission("contacts:export"), chan
 contactRoutes.post("/contacts/import", requirePermission("contacts:create"), csvUpload.single("file"), channel, h(c.importContacts));
 contactRoutes.get("/contacts/fields", requirePermission("contacts:view"), h(c.listFields));
 contactRoutes.get("/contacts/:id", requirePermission("contacts:view"), h(c.getContact));
+contactRoutes.get("/contacts/:id/timeline", requirePermission("contacts:view"), h(c.timeline));
+contactRoutes.get("/contacts/:id/summary", requirePermission("contacts:view"), h(c.summary));
+// Inbox agents keep notes on the people they chat with, so either permission is enough.
+contactRoutes.post("/contacts/:id/notes", requirePermission("contacts:edit", "inbox:send"), h(c.addNote));
+contactRoutes.delete("/contacts/:id/notes/:noteId", requirePermission("contacts:edit", "inbox:send"), h(c.deleteNote));
 contactRoutes.post("/contacts", requirePermission("contacts:create"), channel, h(c.createContact));
 contactRoutes.put("/contacts/:id", requirePermission("contacts:edit"), h(c.updateContact));
 contactRoutes.delete("/contacts/:id", requirePermission("contacts:delete"), h(c.deleteContact));

@@ -40,6 +40,10 @@ const schema = z.object({
   WEBHOOK_VERIFY_TOKEN: z.string().optional(),
   WHATSAPP_SIMULATE: bool,
 
+  /** Payment gateway API bases (overridable for testing). */
+  STRIPE_API_URL: z.string().url().default("https://api.stripe.com"),
+  RAZORPAY_API_URL: z.string().url().default("https://api.razorpay.com"),
+
   MESSAGE_QUEUE_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(3),
   MESSAGE_QUEUE_INTERVAL_MS: z.coerce.number().int().min(200).default(5000),
   MESSAGE_QUEUE_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(50),

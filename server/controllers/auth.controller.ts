@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { startTenantPlan } from "../services/billing.service";
 import { assertMaySignInHere } from "../services/white-label.service";
 import bcrypt from "bcryptjs";
 import { changePasswordSchema, loginSchema, signupSchema, updateProfileSchema } from "@shared/validation";
@@ -110,9 +111,8 @@ export async function createTenantAdmin(v: { username: string; email: string; pa
     accessLevel: lowest?.levelNumber ?? null,
     resellerId: v.resellerId ?? null,
   });
-  const free = await billingRepository.findPlanByName("Free");
-  if (free) await billingRepository.assign(user.id, free, "annual");
-  else log.warn("No 'Free' plan found; new tenant has no subscription until one is assigned");
+  // A free trial when the superadmin set one up, otherwise the Free plan.
+  await startTenantPlan(user.id);
   return user;
 }
 
