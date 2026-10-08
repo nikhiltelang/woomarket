@@ -14,6 +14,7 @@ import { channelsRepository } from "../repositories/channels.repository";
 import { realtime } from "./realtime";
 import { emit } from "./webhooks.service";
 import { contactData } from "./webhook-events";
+import { runChatbot } from "./chatbot.service";
 
 /** "+91 98123-45678" → "+919812345678" (the contact list's format). */
 const normalizePhone = (p: string) => `+${p.replace(/\D/g, "")}`;
@@ -75,8 +76,9 @@ function toVisitor(m: Message): VisitorMessage {
   return { id: m.id, from: m.direction === "inbound" ? "visitor" : "agent", text: m.content, at: (m.createdAt ?? new Date()).toISOString(), ...(m.direction === "outbound" ? { agentName: meta.agentDisplayName ?? null } : {}) };
 }
 
-async function recordInbound(widget: ChatWidget, c: Conversation, text: string, extra: Record<string, unknown> = {}) {
+async function recordInbound(widget: ChatWidget, c: Conversation, text: string, extra: Record<string, unknown> = {}, isNew = false) {
   const at = new Date();
+  const previousInboundAt = c.lastIncomingMessageAt ?? null;
   const message = await messagesRepository.create({
     conversationId: c.id,
     fromUser: true,
@@ -105,6 +107,7 @@ async function recordInbound(widget: ChatWidget, c: Conversation, text: string, 
     widgetId: widget.id,
     receivedAt: at.toISOString(),
   });
+  if (fresh) runChatbot({ tenantId: widget.userId, conversation: fresh, channel: "web", text, previousInboundAt, isNew, at });
   return message;
 }
 
@@ -135,7 +138,7 @@ export async function startVisitorChat(widget: ChatWidget, input: { name?: strin
     webVisitor: { name, email, phone, page: input.page?.slice(0, 500) ?? null, origin, widgetId: widget.id },
   });
   realtime.toChannel(widget.channelId, "conversation_created", { conversation });
-  const message = await recordInbound(widget, conversation, input.message, { page: input.page ?? null });
+  const message = await recordInbound(widget, conversation, input.message, { page: input.page ?? null }, true);
   return { conversation, token: visitorToken(widget.id, conversation.id), messages: [toVisitor(message)] };
 }
 

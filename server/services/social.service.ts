@@ -17,6 +17,7 @@ import { childLogger } from "../lib/logger";
 import { conversationsRepository, messagesRepository } from "../repositories/conversations.repository";
 import { realtime } from "./realtime";
 import { emit } from "./webhooks.service";
+import { pauseAfterAgentReply, runChatbot } from "./chatbot.service";
 
 const log = childLogger("social");
 
@@ -169,7 +170,7 @@ interface MessagingEvent {
   sender?: { id: string };
   recipient?: { id: string };
   timestamp?: number;
-  message?: { mid: string; text?: string; is_echo?: boolean; attachments?: { type: string; payload?: { url?: string } }[]; reply_to?: { mid?: string } };
+  message?: { mid: string; text?: string; is_echo?: boolean; app_id?: number | string; quick_reply?: { payload?: string }; attachments?: { type: string; payload?: { url?: string } }[]; reply_to?: { mid?: string } };
   postback?: { mid?: string; title?: string; payload?: string };
   delivery?: { mids?: string[]; watermark?: number };
   read?: { watermark?: number; mid?: string };
@@ -232,7 +233,9 @@ async function handleMessage(a: SocialAccount, ev: MessagingEvent) {
   if (!customerId) return;
   const at = ev.timestamp ? new Date(ev.timestamp) : new Date();
   const { conversation, created } = await conversationFor(a, customerId, at);
+  const previousInboundAt = conversation.lastIncomingMessageAt ?? null;
   const { content, type, mediaUrl } = describeMessage(m);
+  const buttonId = ev.postback?.payload ?? ev.message?.quick_reply?.payload ?? null;
   const message = await messagesRepository.create({
     conversationId: conversation.id,
     whatsappMessageId: m.mid,
@@ -245,16 +248,19 @@ async function handleMessage(a: SocialAccount, ev: MessagingEvent) {
     mediaUrl,
     status: echo ? "sent" : "received",
     timestamp: at,
-    metadata: { platform: a.platform, ...(echo ? { source: "meta_inbox" } : {}), ...(ev.postback ? { postback: ev.postback.payload ?? null } : {}) },
+    metadata: { platform: a.platform, ...(echo ? { source: "meta_inbox" } : {}), ...(ev.postback ? { postback: ev.postback.payload ?? null } : {}), ...(buttonId ? { buttonId } : {}) },
   });
   await conversationsRepository.recordMessage(conversation.id, { text: content, at, inbound: !echo });
   const fresh = await conversationsRepository.findById(conversation.id);
   if (created) realtime.toChannel(a.channelId, "conversation_created", { conversation: fresh });
   realtime.toChannel(a.channelId, "new_message", { conversationId: conversation.id, message });
   realtime.toChannel(a.channelId, "conversation_updated", { conversation: fresh });
+  // A reply typed in Meta's own inbox is a person answering: the chatbot steps back.
+  if (echo && !(ev.message?.app_id)) await pauseAfterAgentReply(a.userId, conversation.id, at);
   if (!echo) {
     if (fresh?.assignedTo) realtime.toUser(fresh.assignedTo, "notification:new", { type: "message", title: `New ${SOCIAL_LABELS[a.platform as SocialPlatform]} message from ${fresh.contactName}`, body: content.slice(0, 120), conversationId: conversation.id });
     emit(a.userId, "message.received", { messageId: m.mid, channel: a.platform, channelId: a.channelId, conversationId: conversation.id, contact: { id: null, name: fresh?.contactName ?? null, platformUserId: customerId }, type, text: content, account: { id: a.id, name: a.name }, receivedAt: at.toISOString() });
+    if (fresh) runChatbot({ tenantId: a.userId, conversation: fresh, channel: a.platform as SocialPlatform, text: content, buttonId, previousInboundAt, isNew: created, at });
   }
 }
 
@@ -312,11 +318,19 @@ export function replyPolicy(c: Pick<Conversation, "lastIncomingMessageAt">, huma
   return "closed";
 }
 
-export type SocialContent = { text: string } | { imageUrl: string };
+/** Text may carry quick-reply buttons (up to 13; the tapped one comes back as its payload). */
+export type SocialContent = { text: string; quickReplies?: { id: string; title: string }[] } | { imageUrl: string };
 
-export async function sendSocialReply(a: SocialAccount, c: Conversation, content: SocialContent, sender: { id: string; username: string }): Promise<Message> {
+/** Who sent it: a team member, or the chatbot (bot messages don't count as a person's reply). */
+export type SocialSender = { id: string; username: string } | { bot: { ruleId: string | null } };
+
+export async function sendSocialReply(a: SocialAccount, c: Conversation, content: SocialContent, sender: SocialSender): Promise<Message> {
   const image = "imageUrl" in content ? content.imageUrl : null;
   const text = image ? "[image]" : (content as { text: string }).text;
+  const quickReplies = !image ? ((content as { quickReplies?: { id: string; title: string }[] }).quickReplies ?? []).slice(0, 13) : [];
+  const bot = "bot" in sender ? sender.bot : null;
+  const who = bot ? { bot: true, ruleId: bot.ruleId } : { sentBy: (sender as { id: string }).id, sentByName: (sender as { username: string }).username };
+  const fromType = bot ? "bot" : "agent";
   const kind = image ? "image" : "text";
   const policy = replyPolicy(c, a.humanAgentTag);
   if (policy === "closed") {
@@ -327,14 +341,16 @@ export async function sendSocialReply(a: SocialAccount, c: Conversation, content
   try {
     if (a.simulated) mid = `m_sim_${crypto.randomUUID()}`;
     else {
-      const message = image ? { attachment: { type: "image", payload: { url: image, is_reusable: false } } } : { text };
+      const message = image
+        ? { attachment: { type: "image", payload: { url: image, is_reusable: false } } }
+        : { text, ...(quickReplies.length ? { quick_replies: quickReplies.map((q) => ({ content_type: "text", title: q.title.slice(0, 20), payload: q.id })) } : {}) };
       const body = { recipient: { id: c.sessionId }, messaging_type: policy === "human_agent" ? "MESSAGE_TAG" : "RESPONSE", ...(policy === "human_agent" ? { tag: "HUMAN_AGENT" } : {}), message };
       mid = (await graph.call<{ message_id: string }>("POST", `${a.pageId}/messages`, tokenOf(a), body)).message_id;
     }
   } catch (err) {
     const reason = (err as Error).message;
     if (err instanceof GraphError && (err.code === 190 || err.code === 10)) await socialAccountsRepository.update(a.id, { status: "error", lastError: reason.slice(0, 500) });
-    const failed = await messagesRepository.create({ conversationId: c.id, fromUser: false, direction: "outbound", content: text, type: kind, fromType: "agent", messageType: kind, mediaUrl: image, status: "failed", timestamp: now, errorMessage: reason, metadata: { sentBy: sender.id, sentByName: sender.username, platform: a.platform } });
+    const failed = await messagesRepository.create({ conversationId: c.id, fromUser: false, direction: "outbound", content: text, type: kind, fromType, messageType: kind, mediaUrl: image, status: "failed", timestamp: now, errorMessage: reason, metadata: { ...who, platform: a.platform } });
     realtime.toChannel(c.channelId, "new_message", { conversationId: c.id, message: failed });
     throw new AppError(502, `${SOCIAL_LABELS[a.platform as SocialPlatform]} rejected the message: ${reason}`, "SEND_FAILED");
   }
@@ -347,12 +363,12 @@ export async function sendSocialReply(a: SocialAccount, c: Conversation, content
     direction: "outbound",
     content: text,
     type: kind,
-    fromType: "agent",
+    fromType,
     messageType: kind,
     mediaUrl: image,
     status: "sent",
     timestamp: now,
-    metadata: { sentBy: sender.id, sentByName: sender.username, platform: a.platform, ...(policy === "human_agent" ? { tag: "HUMAN_AGENT" } : {}) },
+    metadata: { ...who, platform: a.platform, ...(quickReplies.length ? { options: quickReplies } : {}), ...(policy === "human_agent" ? { tag: "HUMAN_AGENT" } : {}) },
   });
   await conversationsRepository.recordMessage(c.id, { text, at: now, inbound: false });
   const fresh = await conversationsRepository.findById(c.id);
@@ -362,11 +378,11 @@ export async function sendSocialReply(a: SocialAccount, c: Conversation, content
 }
 
 /** Simulator: feeds a fake incoming message through the real webhook handler. */
-export async function simulateInbound(a: SocialAccount, input: { text: string; senderId?: string }) {
+export async function simulateInbound(a: SocialAccount, input: { text: string; senderId?: string; quickReply?: string }) {
   const senderId = input.senderId ?? String(crypto.randomInt(10_000_000, 99_999_999)) + String(crypto.randomInt(10_000_000, 99_999_999));
   await processSocialPayload({
     object: a.platform === "messenger" ? "page" : "instagram",
-    entry: [{ id: a.externalId, messaging: [{ sender: { id: senderId }, recipient: { id: a.externalId }, timestamp: Date.now(), message: { mid: `m_sim_in_${crypto.randomUUID()}`, text: input.text } }] }],
+    entry: [{ id: a.externalId, messaging: [{ sender: { id: senderId }, recipient: { id: a.externalId }, timestamp: Date.now(), message: { mid: `m_sim_in_${crypto.randomUUID()}`, text: input.text, ...(input.quickReply ? { quick_reply: { payload: input.quickReply } } : {}) } }] }],
   });
   return { senderId };
 }

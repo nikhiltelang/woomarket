@@ -10,6 +10,7 @@ import { realtime } from "./realtime";
 import { usersRepository } from "../repositories/users.repository";
 import { assertMessageQuota } from "./levels.service";
 import { whatsappFactory, WhatsAppApiError } from "./whatsapp";
+import { pauseAfterAgentReply } from "./chatbot.service";
 import type { AuthUser } from "../types";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -44,6 +45,13 @@ export async function sendConversationMessage(
   conversation: Conversation,
   input: z.infer<typeof sendMessageSchema>,
 ): Promise<Message> {
+  const message = await sendAgentMessage(user, channel, conversation, input);
+  // A person is talking to the customer now: the chatbot steps back.
+  await pauseAfterAgentReply(channel.createdBy, conversation.id);
+  return message;
+}
+
+async function sendAgentMessage(user: AuthUser, channel: Channel, conversation: Conversation, input: z.infer<typeof sendMessageSchema>): Promise<Message> {
   if (input.type === "image" && !isSocialType(conversation.type)) throw unprocessable("Images can be sent in Messenger and Instagram conversations. On WhatsApp, use a template with an image header.", "IMAGE_NOT_SUPPORTED");
   if (conversation.type === "web") return sendWebReply(user, channel, conversation, input);
   if (isSocialType(conversation.type)) {

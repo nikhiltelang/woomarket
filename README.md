@@ -163,6 +163,14 @@ Human Agent tag for 7 days; text and image replies) and the **website chat widge
 live chat into the inbox and/or a "Chat on WhatsApp" button with link and QR code; allowed-websites
 list, rate limits, signed visitor tokens).
 
+**Chatbot & auto-replies** (WhatsApp marketing → Chatbot): rules answer incoming messages on WhatsApp,
+Messenger, Instagram and website chat. Triggers: keywords, button/list taps, first message (welcome),
+outside business hours (away) and a fallback; replies: text, WhatsApp reply buttons (3) or lists (10)
+(quick replies on Messenger/Instagram, a numbered list on the website), or an AI answer grounded in the
+tenant's own knowledge text that hands off when unsure. Rules can add tags, assign a teammate and hand
+off. The bot pauses after a person replies (also in Meta's inbox), per-rule cooldowns and a loop guard
+stop runaway replies; agents pause/resume it per chat in the inbox. Test console and activity log included.
+
 **AI assistant** (Anthropic Claude, key set by the superadmin, per access level, monthly request limit):
 drafts SMS, WhatsApp template and email copy (email drafts become builder blocks), suggests inbox
 replies, and summarises conversations with sentiment, intent and urgency. Nothing is sent automatically;

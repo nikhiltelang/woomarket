@@ -22,11 +22,18 @@ export interface HealthResult {
   details: Record<string, unknown>;
 }
 
+/** Interactive reply message: up to 3 reply buttons, or a list of up to 10 rows. */
+export type InteractiveMessage =
+  | { kind: "buttons"; text: string; buttons: { id: string; title: string }[] }
+  | { kind: "list"; text: string; button: string; rows: { id: string; title: string; description?: string }[] };
+
 /** Provider-agnostic WhatsApp Business operations for one channel. */
 export interface WhatsAppClient {
   readonly kind: "meta" | "simulator";
   sendText(to: string, text: string): Promise<SendResult>;
   sendTemplate(to: string, t: { name: string; language: string; params: string[] }): Promise<SendResult>;
+  /** Buttons / list message (only inside the 24-hour customer service window). */
+  sendInteractive(to: string, m: InteractiveMessage): Promise<SendResult>;
   submitTemplate(t: Template): Promise<{ id: string; status: string }>;
   listTemplates(): Promise<RemoteTemplate[]>;
   deleteTemplate(name: string): Promise<void>;

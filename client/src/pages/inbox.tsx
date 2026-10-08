@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowLeft,
+  Bot,
   Check,
   CheckCheck,
   Clock,
@@ -155,7 +156,7 @@ function StatusIcon({ message }: { message: Message }) {
 
 function MessageBubble({ m }: { m: Message }) {
   const outbound = m.direction !== "inbound";
-  const meta = (m.metadata ?? {}) as { sentByName?: string; campaignName?: string };
+  const meta = (m.metadata ?? {}) as { sentByName?: string; campaignName?: string; bot?: boolean; options?: { id: string; title: string }[] };
   return (
     <div className={cn("flex", outbound ? "justify-end" : "justify-start")}>
       <div className={cn("max-w-[78%] rounded-lg px-3 py-2 text-sm shadow-sm", outbound ? "bg-bubble-out" : "bg-bubble-in border border-border")}>
@@ -171,7 +172,13 @@ function MessageBubble({ m }: { m: Message }) {
         ) : (
           <p className="break-words whitespace-pre-wrap">{m.content}</p>
         )}
+        {meta.options && meta.options.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {meta.options.map((o) => <span key={o.id} className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-primary">{o.title}</span>)}
+          </div>
+        )}
         <p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-fg-muted">
+          {outbound && meta.bot && <span className="flex items-center gap-0.5"><Bot className="h-3 w-3" aria-hidden /> Bot ·</span>}
           {outbound && meta.sentByName && <span>{meta.sentByName} ·</span>}
           <time dateTime={String(m.timestamp ?? m.createdAt)} title={formatDate(m.timestamp ?? m.createdAt)}>
             {formatTime(m.timestamp ?? m.createdAt)}
@@ -277,7 +284,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   const bottom = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const conv = useQuery<{ data: ConversationRow & { replyPolicy?: string }; contact: Contact | null; social?: PublicSocialAccount | null }>({ queryKey: [`/api/conversations/${id}`] });
+  const conv = useQuery<{ data: ConversationRow & { replyPolicy?: string }; contact: Contact | null; social?: PublicSocialAccount | null; bot?: { enabled: boolean } }>({ queryKey: [`/api/conversations/${id}`] });
   const msgs = useQuery<{ data: Message[] }>({ queryKey: [...messagesKey(id), { limit: 100 }] });
   const assignees = useQuery<{ data: Assignee[] }>({ queryKey: ["/api/team/assignees"], enabled: can("inbox:assign") });
 
@@ -346,6 +353,11 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
     mutationFn: (status: string) => apiRequest("PATCH", `/api/conversations/${id}/status`, { status }),
     onSuccess: invalidate,
   });
+  const pauseBot = useMutation({
+    mutationFn: (hours: number) => apiRequest("POST", `/api/chatbot/conversations/${id}/pause`, { hours }),
+    onSuccess: invalidate,
+    onError: (err) => toast({ title: "Could not change the bot", description: (err as Error).message, variant: "error" }),
+  });
   const togglePin = useMutation({
     mutationFn: (pinned: boolean) => apiRequest(pinned ? "DELETE" : "POST", `/api/conversations/${id}/pin`),
     onSuccess: invalidate,
@@ -382,6 +394,20 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               {typing && <span className="ml-2 text-primary">{typing} is typing…</span>}
             </p>
           </div>
+          {conv.data.bot?.enabled && can("inbox:send") && (() => {
+            const paused = Boolean(c.botPausedUntil && new Date(c.botPausedUntil).getTime() > Date.now());
+            return (
+              <Button
+                variant={paused ? "outline" : "ghost"}
+                size="sm"
+                loading={pauseBot.isPending}
+                onClick={() => pauseBot.mutate(paused ? 0 : 24)}
+                title={paused ? `The bot is paused here until ${formatDate(c.botPausedUntil)}. Click to let it answer again.` : "The bot answers this chat. Click to pause it for 24 hours."}
+              >
+                <Bot className="h-4 w-4" /> {paused ? "Bot paused · resume" : "Pause bot"}
+              </Button>
+            );
+          })()}
           <Button variant="ghost" size="icon" onClick={() => togglePin.mutate(c.pinned)} aria-label={c.pinned ? "Unpin" : "Pin"}>
             {c.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
           </Button>

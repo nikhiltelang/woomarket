@@ -6,7 +6,7 @@ import { db } from "../../db";
 import { channelAccessToken } from "../../repositories/channels.repository";
 import { childLogger } from "../../lib/logger";
 import { countTemplateVariables } from "../../repositories/templates.repository";
-import { toWaId, WhatsAppApiError, type HealthResult, type RemoteTemplate, type SendResult, type WhatsAppClient } from "./types";
+import { toWaId, WhatsAppApiError, type HealthResult, type InteractiveMessage, type RemoteTemplate, type SendResult, type WhatsAppClient } from "./types";
 
 const log = childLogger("whatsapp-meta");
 const TIMEOUT_MS = 15_000;
@@ -92,6 +92,18 @@ export class MetaCloudClient implements WhatsAppClient {
 
   sendText(to: string, text: string) {
     return this.send({ to: toWaId(to), type: "text", text: { body: text, preview_url: false } });
+  }
+
+  sendInteractive(to: string, m: InteractiveMessage) {
+    const interactive =
+      m.kind === "buttons"
+        ? { type: "button", body: { text: m.text }, action: { buttons: m.buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) } }
+        : {
+            type: "list",
+            body: { text: m.text },
+            action: { button: m.button, sections: [{ rows: m.rows.map((r) => ({ id: r.id, title: r.title, ...(r.description ? { description: r.description } : {}) })) }] },
+          };
+    return this.send({ to: toWaId(to), type: "interactive", interactive });
   }
 
   sendTemplate(to: string, t: { name: string; language: string; params: string[] }) {

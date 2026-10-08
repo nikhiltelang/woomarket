@@ -149,6 +149,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
             { href: "/campaigns", label: t("nav.campaigns"), permission: "campaigns:view" },
             { href: "/templates", label: t("nav.templates"), permission: "templates:view" },
             { href: "/inbox", label: t("nav.inbox"), permission: "inbox:view", badge: unread?.count },
+            { href: "/chatbot", label: t("nav.chatbot"), permission: "automations:view" },
             { href: "/widget", label: t("nav.widget"), permission: "settings:view" },
             { href: "/social", label: t("nav.social"), permission: "settings:view" },
             { href: "/settings", label: t("nav.channelSettings"), permission: "settings:view" },

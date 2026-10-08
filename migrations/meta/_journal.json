@@ -169,6 +169,13 @@
       "when": 1791465510493,
       "tag": "0023_claimed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1791468148399,
+      "tag": "0024_chatbot",
+      "breakpoints": true
     }
   ]
 }

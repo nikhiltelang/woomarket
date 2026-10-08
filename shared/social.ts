@@ -37,6 +37,8 @@ export const simulateInboundSchema = z.object({
   /** Simulated sender id; the same id continues the same conversation. */
   senderId: z.string().trim().regex(/^\d{5,30}$/).optional(),
   name: z.string().trim().max(60).optional(),
+  /** Simulates tapping a quick-reply button with this payload. */
+  quickReply: z.string().trim().max(64).optional(),
 });
 
 export interface PublicSocialAccount {

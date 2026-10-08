@@ -15,6 +15,7 @@ import { childLogger } from "../lib/logger";
 import { timingSafeEqualStr } from "../lib/crypto";
 import { realtime } from "./realtime";
 import { setSimulatorSink } from "./whatsapp/simulator-client";
+import { runChatbot } from "./chatbot.service";
 
 const log = childLogger("webhook");
 
@@ -44,11 +45,11 @@ interface InboundMessage {
   sticker?: { id?: string; mime_type?: string };
   location?: { latitude?: number; longitude?: number; name?: string; address?: string };
   button?: { text?: string; payload?: string };
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  interactive?: { type?: string; button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
   reaction?: { emoji?: string; message_id?: string };
 }
 
-function describe(msg: InboundMessage): { content: string; media?: { id?: string; mime?: string; sha?: string } } {
+function describe(msg: InboundMessage): { content: string; media?: { id?: string; mime?: string; sha?: string }; buttonId?: string } {
   switch (msg.type) {
     case "text":
       return { content: msg.text?.body ?? "" };
@@ -66,9 +67,11 @@ function describe(msg: InboundMessage): { content: string; media?: { id?: string
     case "location":
       return { content: `📍 ${msg.location?.name ?? ""} ${msg.location?.latitude},${msg.location?.longitude}`.trim() };
     case "button":
-      return { content: msg.button?.text ?? "[button]" };
-    case "interactive":
-      return { content: msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? "[interactive]" };
+      return { content: msg.button?.text ?? "[button]", buttonId: msg.button?.payload };
+    case "interactive": {
+      const reply = msg.interactive?.button_reply ?? msg.interactive?.list_reply;
+      return { content: reply?.title ?? "[interactive]", buttonId: reply?.id };
+    }
     case "reaction":
       return { content: `Reacted ${msg.reaction?.emoji ?? ""}` };
     default:
@@ -116,7 +119,8 @@ async function handleInbound(channel: Channel, msg: InboundMessage, profiles: { 
     created = true;
   }
 
-  const { content, media } = describe(msg);
+  const previousInboundAt = conversation.lastIncomingMessageAt ?? null;
+  const { content, media, buttonId } = describe(msg);
   const message = await messagesRepository.create({
     conversationId: conversation.id,
     whatsappMessageId: msg.id,
@@ -131,7 +135,7 @@ async function handleInbound(channel: Channel, msg: InboundMessage, profiles: { 
     mediaSha256: media?.sha ?? null,
     status: "received",
     timestamp: at,
-    metadata: { context: msg.context ?? null },
+    metadata: { context: msg.context ?? null, ...(buttonId ? { buttonId } : {}) },
   });
   await conversationsRepository.recordMessage(conversation.id, { text: content, at, inbound: true });
 
@@ -169,6 +173,10 @@ async function handleInbound(channel: Channel, msg: InboundMessage, profiles: { 
       body: content.slice(0, 120),
       conversationId: conversation.id,
     });
+  }
+
+  if (fresh) {
+    runChatbot({ tenantId: channel.createdBy, conversation: fresh, channel: "whatsapp", text: content, buttonId: buttonId ?? null, previousInboundAt, isNew: created, at });
   }
 }
 

@@ -22,6 +22,7 @@ import { activityRepository } from "../repositories/activity.repository";
 import { assertChannelAccess } from "../middlewares/tenant";
 import { findOrCreateConversation, isWithinServiceWindow, sendConversationMessage } from "../services/messaging.service";
 import { realtime } from "../services/realtime";
+import { chatbotRepository } from "../services/chatbot.service";
 
 export async function loadConversation(req: Request, id = req.params.id ?? req.params.conversationId): Promise<{ conversation: Conversation; channel: Channel }> {
   const conversation = await conversationsRepository.findById(id);
@@ -41,15 +42,17 @@ export async function listConversations(req: Request, res: Response) {
 }
 
 export async function getConversation(req: Request, res: Response) {
-  const { conversation } = await loadConversation(req);
+  const { conversation, channel } = await loadConversation(req);
   const contact = conversation.contactId ? await contactsRepository.findById(conversation.contactId) : undefined;
+  // Whether the tenant's chatbot is on (the inbox offers pause / resume then).
+  const bot = { enabled: channel.createdBy ? (await chatbotRepository.settings(channel.createdBy)).enabled : false };
   if (isSocialType(conversation.type)) {
     // Messenger / Instagram: 24 hours, or 7 days when the account may use the Human Agent tag.
     const account = conversation.socialAccountId ? await socialAccountsRepository.find(conversation.socialAccountId) : undefined;
     const policy = account ? replyPolicy(conversation, account.humanAgentTag) : "closed";
-    return res.json({ data: { ...conversation, windowOpen: policy !== "closed", replyPolicy: policy }, contact: null, social: account ? publicAccount(account) : null });
+    return res.json({ data: { ...conversation, windowOpen: policy !== "closed", replyPolicy: policy }, contact: null, social: account ? publicAccount(account) : null, bot });
   }
-  res.json({ data: withWindow(conversation), contact: contact ?? null });
+  res.json({ data: withWindow(conversation), contact: contact ?? null, bot });
 }
 
 export async function createConversation(req: Request, res: Response) {

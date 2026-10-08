@@ -280,6 +280,8 @@ export const conversations = mysqlTable(
     /** AI summary, sentiment and intent (see shared/ai.ts), refreshed on demand. */
     aiInsights: json("ai_insights").$type<Record<string, unknown>>(),
     aiAnalyzedAt: ts("ai_analyzed_at"),
+    /** The chatbot stays quiet in this conversation until then (a person replied or took over). */
+    botPausedUntil: ts("bot_paused_until"),
     /** Website chat (type "web"): what the visitor told us and where they chatted from. */
     /** Messenger / Instagram conversations: the connected account they came through. */
     socialAccountId: char("social_account_id", { length: 36 }),
@@ -1271,6 +1273,8 @@ export const tenantSettings = mysqlTable("tenant_settings", {
     .references(() => users.id, { onDelete: "cascade" }),
   /** Time zone, quiet hours and best-time default (see shared/sending.ts). */
   sending: json("sending").$type<Record<string, unknown>>(),
+  /** Chatbot switch, business hours and pauses (see shared/chatbot.ts). */
+  chatbot: json("chatbot").$type<Record<string, unknown>>(),
   updatedAt: updatedAt(),
 });
 
@@ -1581,6 +1585,59 @@ export const segments = mysqlTable(
   (t) => [index("segments_user_idx").on(t.userId)],
 );
 
+// ---------------------------------------------------------------------------
+// Chatbot and auto-replies
+// ---------------------------------------------------------------------------
+
+export const chatbotRules = mysqlTable(
+  "chatbot_rules",
+  {
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    /** Lower runs first among rules of the same trigger type. */
+    priority: int("priority").notNull().default(0),
+    /** Channels the rule answers on: whatsapp, messenger, instagram, web. */
+    channels: jsonArray<string>("channels"),
+    trigger: json("trigger").$type<Record<string, unknown>>().notNull(),
+    response: json("response").$type<Record<string, unknown>>().notNull(),
+    actions: json("actions").$type<Record<string, unknown>>(),
+    cooldownMinutes: int("cooldown_minutes").notNull().default(0),
+    timesTriggered: int("times_triggered").notNull().default(0),
+    lastTriggeredAt: ts("last_triggered_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("chatbot_rules_user_idx").on(t.userId, t.priority)],
+);
+export type ChatbotRule = InferSelectModel<typeof chatbotRules>;
+
+/** What the bot did (or chose not to do) for each incoming message. */
+export const chatbotEvents = mysqlTable(
+  "chatbot_events",
+  {
+    id: id(),
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    conversationId: char("conversation_id", { length: 36 }).references(() => conversations.id, { onDelete: "cascade" }),
+    ruleId: char("rule_id", { length: 36 }).references(() => chatbotRules.id, { onDelete: "set null" }),
+    channel: varchar("channel", { length: 12 }).notNull(),
+    /** replied | handoff | skipped | failed */
+    outcome: varchar("outcome", { length: 12 }).notNull(),
+    /** Why: trigger type, or why the bot stayed quiet. */
+    detail: varchar("detail", { length: 300 }),
+    incomingText: varchar("incoming_text", { length: 300 }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("chatbot_events_user_idx").on(t.userId, t.createdAt), index("chatbot_events_conv_idx").on(t.conversationId, t.createdAt)],
+);
+export type ChatbotEvent = InferSelectModel<typeof chatbotEvents>;
+
 /** Tables owned by this schema; drizzle-kit is restricted to these. */
 export const MANAGED_TABLES = [
   "channels",
@@ -1642,6 +1699,8 @@ export const MANAGED_TABLES = [
   "brands",
   "brand_domains",
   "social_accounts",
+  "chatbot_rules",
+  "chatbot_events",
 ] as const;
 
 // ---------------------------------------------------------------------------

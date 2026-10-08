@@ -72,6 +72,10 @@ export class SimulatorClient implements WhatsAppClient {
     return this.accept(to);
   }
 
+  async sendInteractive(to: string) {
+    return this.accept(to);
+  }
+
   async sendTemplate(to: string) {
     return this.accept(to);
   }
