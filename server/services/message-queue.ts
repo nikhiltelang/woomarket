@@ -13,6 +13,7 @@ import { renderTemplateBody, templatesRepository } from "../repositories/templat
 import { realtime } from "./realtime";
 import { whatsappFactory, WhatsAppApiError } from "./whatsapp";
 import { findOrCreateConversation } from "./messaging.service";
+import { COEXISTENCE_MPS } from "@shared/whatsapp-signup";
 
 const log = childLogger("message-queue");
 const STUCK_AFTER_MS = 5 * 60 * 1000;
@@ -79,6 +80,28 @@ export const queueRepository = {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Sends per second a number may make: Coexistence numbers are capped by Meta. */
+export const channelRate = (channel: Pick<Channel, "isCoexistence">) => (channel.isCoexistence ? Math.min(COEXISTENCE_MPS, config.MESSAGE_RATE_PER_SECOND) : config.MESSAGE_RATE_PER_SECOND);
+
+/** Single-server limiter (database mode): only Coexistence numbers need one below the batch pace. */
+const windows = new Map<string, { second: number; n: number }>();
+export async function localThrottle(channel: Channel): Promise<void> {
+  if (!channel.isCoexistence) return;
+  for (;;) {
+    const second = Math.floor(Date.now() / 1000);
+    const w = windows.get(channel.id);
+    if (!w || w.second !== second) {
+      windows.set(channel.id, { second, n: 1 });
+      return;
+    }
+    if (w.n < channelRate(channel)) {
+      w.n++;
+      return;
+    }
+    await sleep(1000 - (Date.now() % 1000) + 5);
+  }
+}
 const backoffMs = (attempt: number) => Math.min(30_000 * 2 ** (attempt - 1), 15 * 60_000);
 
 /** Finishes a running campaign once nothing is left in the queue for it. */
@@ -102,7 +125,7 @@ export class MessageQueueWorker {
   private timer: NodeJS.Timeout | null = null;
   private current: Promise<unknown> | null = null;
   /** Waits for a send slot on a channel; set to a cluster-wide limiter in Redis mode. */
-  throttle: (channelId: string) => Promise<void> = async () => {};
+  throttle: (channel: Channel) => Promise<void> = localThrottle;
 
   start(): void {
     if (this.timer) return;
@@ -183,7 +206,7 @@ export class MessageQueueWorker {
 
     const attempt = (row.attempts ?? 0) + 1;
     try {
-      await this.throttle(channel.id);
+      await this.throttle(channel);
       const { messageId } = await whatsappFactory.create(channel).sendTemplate(row.recipientPhone, {
         name: row.templateName ?? "",
         language: row.templateLanguage ?? "en_US",

@@ -157,6 +157,18 @@ zone, A/B tests on all three channels (winner picked automatically by open, clic
 re-evaluated at send time) and a **drag-and-drop email builder** (table-based, mobile-friendly HTML
 generated on the server from the design, image upload).
 
+**Connecting WhatsApp numbers:** tenants use **Embedded Signup** (Channel settings → Connect number →
+"Connect with Facebook"): Meta's popup returns a code that the server exchanges for the business's token,
+then it subscribes the app to the WhatsApp Business Account and registers the number with a two-step PIN
+(stored encrypted, shown once and on request). **Coexistence** ("Use my WhatsApp Business app number")
+keeps the number on the WhatsApp Business app: it isn't registered; instead the contacts and up to six
+months of chat history are synced (within 24 hours, retryable), and replies typed in the app arrive as
+`smb_message_echoes` and show in the inbox (they also pause the chatbot). Coexistence numbers send at
+most 20 messages/second. The superadmin sets the Meta App ID, App secret and Embedded Signup
+configuration ID under System settings → WhatsApp Embedded Signup; the saved app secret also verifies
+webhook signatures. Without a Meta app, development servers offer a simulated signup. Manual credentials
+and the simulator remain available.
+
 **Inbox channels:** WhatsApp, **Facebook Messenger and Instagram Direct** (connect a Page under
 WhatsApp marketing → Instagram & Messenger; same Meta webhook as WhatsApp; 24-hour window, optional
 Human Agent tag for 7 days; text and image replies) and the **website chat widget** (one `<script>` tag;

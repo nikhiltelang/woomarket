@@ -68,6 +68,9 @@ export function makeChannel(overrides: Partial<Channel> = {}): Channel {
     createdAt: new Date(),
     updatedAt: new Date(),
     createdBy: "",
+    businessId: null,
+    twoStepPin: null,
+    onboarding: null,
     ...overrides,
   };
 }

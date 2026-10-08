@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Activity, FlaskConical, MessageSquarePlus, Phone, Plus, Trash2 } from "lucide-react";
+import { Activity, FlaskConical, KeyRound, MessageSquarePlus, Phone, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { COEXISTENCE_SYNC_WINDOW_MS, type ChannelOnboarding } from "@shared/whatsapp-signup";
+import { EmbeddedSignupButtons, SignupResultDialog } from "@/components/embedded-signup";
 import type { PublicChannel } from "@shared/api-types";
 import { useAuth } from "@/contexts/auth";
 import { useChannel } from "@/contexts/channel";
@@ -12,7 +14,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Badge, Card, CardHeader, EmptyState, PageLoader, StatusBadge } from "@/components/ui/display";
 import { Dialog, useConfirm, useToast } from "@/components/ui/overlay";
 
-function AddChannelDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddChannelDialog({ open, onClose, onSignup }: { open: boolean; onClose: () => void; onSignup: (r: SignupResult) => void }) {
   const toast = useToast();
   const { setActiveChannelId } = useChannel();
   const [method, setMethod] = useState<"manual" | "simulator">("manual");
@@ -57,7 +59,14 @@ function AddChannelDialog({ open, onClose }: { open: boolean; onClose: () => voi
       }
     >
       <div className="flex flex-col gap-4">
-        <Field label="Connection" htmlFor="ch-method">
+        <EmbeddedSignupButtons
+          onConnected={(r) => {
+            setActiveChannelId(r.data.id);
+            onClose();
+            onSignup(r);
+          }}
+        />
+        <Field label="Or connect manually" htmlFor="ch-method">
           <Select id="ch-method" value={method} onChange={(e) => setMethod(e.target.value as "manual" | "simulator")}>
             <option value="manual">WhatsApp Cloud API (Meta credentials)</option>
             <option value="simulator">Simulator — test without Meta</option>
@@ -136,12 +145,65 @@ function SimulateDialog({ channel, onClose }: { channel: PublicChannel | null; o
   );
 }
 
+type SignupResult = { data: PublicChannel; warnings: string[]; pin: string | null };
+
+/** Coexistence: what was copied from the WhatsApp Business app, and a retry within 24 hours. */
+function CoexistenceStatus({ c, canSync }: { c: PublicChannel; canSync: boolean }) {
+  const toast = useToast();
+  const o = c.onboarding as unknown as ChannelOnboarding | null;
+  const sync = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/channels/${c.id}/coexistence/sync`),
+    onSuccess: () => {
+      toast({ title: "Sync requested", description: "Contacts and chats arrive over the next few minutes.", variant: "success" });
+      void queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+    },
+    onError: (err) => toast({ title: "Could not sync", description: (err as Error).message, variant: "error" }),
+  });
+  if (!o) return null;
+  const open = Date.now() - Date.parse(o.onboardedAt) < COEXISTENCE_SYNC_WINDOW_MS;
+  const h = o.history;
+  return (
+    <div className="mt-4 rounded-md bg-subtle p-3 text-xs">
+      <p className="flex items-center gap-1.5 font-medium"><Smartphone className="h-3.5 w-3.5" /> Shared with the WhatsApp Business app</p>
+      <ul className="mt-1.5 space-y-0.5 text-fg-muted">
+        <li>Contacts copied: <b className="text-fg">{o.contacts?.imported ?? 0}</b>{o.contacts?.error && <span className="text-danger"> · {o.contacts.error}</span>}</li>
+        <li>
+          Chat history: {h?.declined ? "not shared (declined in the app)" : <><b className="text-fg">{h?.imported ?? 0}</b> messages{h?.progress != null && h.progress < 100 ? ` · ${h.progress}%` : h?.progress === 100 ? " · done" : ""}</>}
+          {h?.error && <span className="text-danger"> · {h.error}</span>}
+        </li>
+        <li>Replies sent from the app appear in the inbox and pause the chatbot. Limit: 20 messages per second.</li>
+      </ul>
+      {canSync && open && (
+        <Button size="sm" variant="outline" className="mt-2" onClick={() => sync.mutate()} loading={sync.isPending}>
+          <RefreshCw className="h-3.5 w-3.5" /> Sync again
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function PinButton({ c }: { c: PublicChannel }) {
+  const toast = useToast();
+  const [pin, setPin] = useState<string | null>(null);
+  const show = useMutation({
+    mutationFn: () => apiRequest<{ data: { pin: string } }>("GET", `/api/channels/${c.id}/pin`),
+    onSuccess: (r) => setPin(r.data.pin),
+    onError: (err) => toast({ title: "Could not show the PIN", description: (err as Error).message, variant: "error" }),
+  });
+  return pin ? (
+    <span className="flex items-center gap-1.5 text-sm"><KeyRound className="h-3.5 w-3.5" /> PIN <code className="tracking-widest">{pin}</code></span>
+  ) : (
+    <Button size="sm" variant="outline" onClick={() => show.mutate()} loading={show.isPending}><KeyRound className="h-3.5 w-3.5" /> Show PIN</Button>
+  );
+}
+
 export default function SettingsPage() {
   const { can, user } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
   const [adding, setAdding] = useState(false);
   const [simulating, setSimulating] = useState<PublicChannel | null>(null);
+  const [signup, setSignup] = useState<SignupResult | null>(null);
   const { data, isLoading } = useQuery<{ data: PublicChannel[] }>({ queryKey: ["/api/channels"] });
   const webhook = useQuery<{ url: string; verifyTokenConfigured: boolean }>({ queryKey: ["/api/webhook/global-url"] });
 
@@ -199,6 +261,7 @@ export default function SettingsPage() {
                         <FlaskConical className="h-3 w-3" /> simulator
                       </Badge>
                     )}
+                    {c.isCoexistence && <Badge tone="primary">Business app</Badge>}
                   </h2>
                   <p className="text-sm text-fg-muted">{c.phoneNumber ?? "No display number"}</p>
                 </div>
@@ -234,10 +297,12 @@ export default function SettingsPage() {
                   <div className="col-span-2 text-danger">{c.healthDetails.error}</div>
                 )}
               </dl>
+              {c.isCoexistence && <CoexistenceStatus c={c} canSync={can("settings:edit") && user?.role === "admin"} />}
               <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                 <Button size="sm" variant="outline" onClick={() => health.mutate(c.id)} loading={health.isPending && health.variables === c.id}>
                   <Activity className="h-3.5 w-3.5" /> Check health
                 </Button>
+                {c.hasPin && can("settings:edit") && user?.role === "admin" && <PinButton c={c} />}
                 {c.connectionMethod === "simulator" && (
                   <Button size="sm" variant="outline" onClick={() => setSimulating(c)}>
                     <MessageSquarePlus className="h-3.5 w-3.5" /> Simulate incoming
@@ -270,7 +335,7 @@ export default function SettingsPage() {
 
       {webhook.data && (
         <Card className="mt-6">
-          <CardHeader title="Meta webhook" description="Configure this callback URL in your Meta app and subscribe to messages and message_template_status_update." />
+          <CardHeader title="Meta webhook" description="Only needed for numbers connected manually with your own Meta app: configure this callback URL and subscribe to messages and message_template_status_update." />
           <div className="space-y-2 p-5 text-sm">
             <p>
               Callback URL: <code className="rounded bg-subtle px-1.5 py-0.5 font-mono text-xs break-all">{webhook.data.url}</code>
@@ -282,7 +347,8 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      <AddChannelDialog open={adding} onClose={() => setAdding(false)} />
+      <AddChannelDialog open={adding} onClose={() => setAdding(false)} onSignup={setSignup} />
+      <SignupResultDialog result={signup} onClose={() => setSignup(null)} />
       <SimulateDialog channel={simulating} onClose={() => setSimulating(null)} />
     </ChannelShell>
   );

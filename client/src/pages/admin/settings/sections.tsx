@@ -437,6 +437,49 @@ function QueueForm({ c }: { c: SystemConfigResponse }) {
   );
 }
 
+// --- WhatsApp Embedded Signup -------------------------------------------------------------------
+
+function WhatsappSignupForm({ c }: { c: SystemConfigResponse }) {
+  const w = c.data.extensionSettings.whatsappSignup;
+  const [v, setV] = useState({ enabled: w.enabled, appId: w.appId, appSecret: "", configId: w.configId, coexistence: w.coexistence });
+  const save = useSaveSection("whatsapp-signup", "Embedded Signup settings saved");
+  const hook = useQuery<{ url: string; verifyTokenConfigured: boolean }>({ queryKey: ["/api/webhook/global-url"] });
+  const hasSecret = Boolean(v.appSecret || w.hasAppSecret || w.envAppSecret);
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionCard>
+        <div className="flex max-w-2xl flex-col gap-5">
+          <Switch label="Embedded Signup" description="Tenants connect their WhatsApp number in a Facebook popup instead of copying IDs and tokens. Without it, development servers offer a simulated signup." checked={v.enabled} onChange={(enabled) => setV({ ...v, enabled })} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Meta App ID" htmlFor="es-app"><Input id="es-app" inputMode="numeric" value={v.appId} onChange={(e) => setV({ ...v, appId: e.target.value.trim() })} placeholder="1234567890123456" /></Field>
+            <Field label="Configuration ID" htmlFor="es-cfg" hint="Facebook Login for Business → Configurations (WhatsApp Embedded Signup).">
+              <Input id="es-cfg" inputMode="numeric" value={v.configId} onChange={(e) => setV({ ...v, configId: e.target.value.trim() })} placeholder="987654321098765" />
+            </Field>
+          </div>
+          <Field label="App secret" htmlFor="es-secret" hint={w.hasAppSecret ? "A secret is saved (encrypted). Leave blank to keep it." : w.envAppSecret ? <>Using <code>WHATSAPP_APP_SECRET</code> from the environment. Enter one here to override it.</> : "App settings → Basic → App secret. Also used to verify webhook signatures."}>
+            <Input id="es-secret" type="password" autoComplete="off" value={v.appSecret} onChange={(e) => setV({ ...v, appSecret: e.target.value })} />
+          </Field>
+          <Switch label="WhatsApp Business app numbers (Coexistence)" description="Businesses keep using the WhatsApp Business app on their phone while also sending from here. Their contacts and up to 6 months of chats are imported; messages they type in the app appear in the inbox. These numbers are limited to 20 messages per second." checked={v.coexistence} onChange={(coexistence) => setV({ ...v, coexistence })} />
+        </div>
+        <SaveBar pending={save.isPending} disabled={v.enabled && (!v.appId || !v.configId || !hasSecret)} onSave={() => save.mutate({ enabled: v.enabled, appId: v.appId, configId: v.configId, coexistence: v.coexistence, ...(v.appSecret ? { appSecret: v.appSecret } : {}) })} />
+      </SectionCard>
+      <SectionCard>
+        <h2 className="text-sm font-semibold">Set up in your Meta app</h2>
+        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
+          <li>Your app must be a <b>Tech Provider</b> (or Solution Partner) with the <b>WhatsApp</b> product and <code>whatsapp_business_management</code> / <code>whatsapp_business_messaging</code> advanced access.</li>
+          <li>Under Facebook Login for Business, create a configuration for <b>WhatsApp Embedded Signup</b> and paste its ID above. Add <code>{location.host}</code> to the allowed domains of the app.</li>
+          <li>
+            Webhooks → WhatsApp Business Account: callback URL
+            {hook.data && <code className="ml-1 break-all">{hook.data.url}</code>} (same verify token as today), subscribed to <code>messages</code>, <code>message_template_status_update</code>
+            {v.coexistence && <>, <code>history</code>, <code>smb_app_state_sync</code> and <code>smb_message_echoes</code></>}.
+          </li>
+          {v.coexistence && <li>Coexistence numbers must sync within 24 hours of connecting: this happens automatically; tenants can retry from Channel settings during that time.</li>}
+        </ol>
+      </SectionCard>
+    </div>
+  );
+}
+
 // --- AI assistant ------------------------------------------------------------------------------
 
 function AiAssistantForm({ c }: { c: SystemConfigResponse }) {
@@ -583,6 +626,7 @@ export const SECTIONS: Record<string, { title: string; description: string; rend
   seo: { title: "SEO configuration", description: "Injected into every page served by the app.", render: (c) => <SeoForm c={c} /> },
   frontend: { title: "Manage frontend", description: "Content of the public sign-in and sign-up pages.", render: (c) => <FrontendForm c={c} /> },
   queue: { title: "Queue & scaling", description: "Optional Redis / BullMQ for running several servers.", render: (c) => <QueueForm c={c} /> },
+  "whatsapp-signup": { title: "WhatsApp Embedded Signup", description: "Connect WhatsApp numbers with Facebook, including Coexistence.", render: (c) => <WhatsappSignupForm c={c} /> },
   "ai-assistant": { title: "AI assistant", description: "Claude-powered drafting, reply suggestions and summaries.", render: (c) => <AiAssistantForm c={c} /> },
   "social-login": { title: "Social login setting", description: "Single sign-on with Google and Microsoft.", render: (c) => <SocialLoginForm c={c} /> },
   maintenance: { title: "Maintenance mode", description: "Temporarily take the app offline for tenants.", render: (c) => <MaintenanceForm c={c} /> },

@@ -24,6 +24,10 @@ export function toPublicChannel(c: Channel): PublicChannel {
     createdBy: c.createdBy,
     createdAt: c.createdAt?.toISOString() ?? null,
     tokenPreview,
+    isCoexistence: Boolean(c.isCoexistence),
+    businessId: c.businessId ?? null,
+    onboarding: c.onboarding ?? null,
+    hasPin: Boolean(c.twoStepPin),
   };
 }
 

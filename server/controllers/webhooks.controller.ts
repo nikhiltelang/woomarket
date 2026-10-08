@@ -4,6 +4,7 @@ import { childLogger } from "../lib/logger";
 import { timingSafeEqualStr } from "../lib/crypto";
 import { channelsRepository } from "../repositories/channels.repository";
 import { processWebhookPayload, verifySignature } from "../services/webhook-handler";
+import { signupSettings } from "../services/whatsapp-signup.service";
 
 const log = childLogger("webhook");
 
@@ -21,7 +22,9 @@ export function verifyWebhook(req: Request, res: Response) {
 
 /** POST: events. Signature-checked, idempotent (dedup by message id); 5xx makes Meta retry. */
 export async function receiveWebhook(req: Request, res: Response) {
-  if (!verifySignature(req.rawBody, req.get("x-hub-signature-256"))) {
+  // The app secret saved for Embedded Signup (or WHATSAPP_APP_SECRET) signs Meta's webhooks.
+  const secret = (await signupSettings()).appSecret ?? undefined;
+  if (!verifySignature(req.rawBody, req.get("x-hub-signature-256"), secret)) {
     log.warn({ ip: req.ip }, "Webhook signature invalid");
     return res.sendStatus(401);
   }

@@ -56,6 +56,12 @@ export const channels = mysqlTable("channels", {
   appId: text("app_id"),
   isActive: boolean("is_active").default(true),
   isCoexistence: boolean("is_coexistence").default(false),
+  /** Meta business portfolio the number belongs to (Embedded Signup). */
+  businessId: varchar("business_id", { length: 40 }),
+  /** Encrypted two-step verification PIN set when we registered the number. */
+  twoStepPin: text("two_step_pin"),
+  /** Embedded Signup / Coexistence progress (see shared/whatsapp-signup.ts). */
+  onboarding: json("onboarding").$type<Record<string, unknown>>(),
   healthStatus: text("health_status").$defaultFn(() => "unknown"),
   lastHealthCheck: ts("last_health_check"),
   healthDetails: jsonObject<ChannelHealthDetails>("health_details"),
@@ -179,7 +185,8 @@ export const templates = mysqlTable(
 
 export const apiLogs = mysqlTable("api_logs", {
   id: id(),
-  channelId: char("channel_id", { length: 36 }).references(() => channels.id),
+  // Logs outlive a disconnected number.
+  channelId: char("channel_id", { length: 36 }).references(() => channels.id, { onDelete: "set null" }),
   requestType: varchar("request_type", { length: 50 }).notNull(),
   endpoint: text("endpoint").notNull(),
   method: varchar("method", { length: 10 }).notNull(),
@@ -432,8 +439,8 @@ export const conversationPins = mysqlTable(
 
 export const messageQueue = mysqlTable("message_queue", {
   id: id(),
-  campaignId: char("campaign_id", { length: 36 }).references(() => campaigns.id),
-  channelId: char("channel_id", { length: 36 }).references(() => channels.id),
+  campaignId: char("campaign_id", { length: 36 }).references(() => campaigns.id, { onDelete: "cascade" }),
+  channelId: char("channel_id", { length: 36 }).references(() => channels.id, { onDelete: "cascade" }),
   recipientPhone: varchar("recipient_phone", { length: 20 }).notNull(),
   templateName: varchar("template_name", { length: 100 }),
   templateLanguage: varchar("template_language", { length: 20 }).default("en_US"),
@@ -868,6 +875,8 @@ export interface ExtensionSettings {
   aiAssistant?: { enabled: boolean; apiKey?: string; model: string; monthlyLimit: number };
   /** Optional Redis / BullMQ mode. url is encrypted. */
   queue?: { enabled: boolean; url?: string; prefix: string; concurrency: number };
+  /** Meta app for WhatsApp Embedded Signup. appSecret is encrypted. */
+  whatsappSignup?: { enabled: boolean; appId: string; appSecret?: string; configId: string; coexistence: boolean };
 }
 
 export const systemConfigurations = mysqlTable("system_configurations", {

@@ -41,15 +41,19 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       // The chat widget is embedded in customer sites, so framing stays allowed.
       frameguard: false,
       crossOriginEmbedderPolicy: false,
+      // Meta's Embedded Signup popup reports back to this window, which needs the opener link.
+      crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
       contentSecurityPolicy: config.isProduction
         ? {
             directives: {
               defaultSrc: ["'self'"],
-              scriptSrc: ["'self'"],
+              // Facebook SDK for WhatsApp Embedded Signup.
+              scriptSrc: ["'self'", "https://connect.facebook.net"],
+              frameSrc: ["'self'", "https://*.facebook.com"],
               styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
               fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
               imgSrc: ["'self'", "data:", "blob:", "https:"],
-              connectSrc: ["'self'", "ws:", "wss:"],
+              connectSrc: ["'self'", "ws:", "wss:", "https://*.facebook.com"],
               frameAncestors: ["*"],
             },
           }

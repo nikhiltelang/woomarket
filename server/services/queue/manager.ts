@@ -19,7 +19,7 @@ import { config } from "../../config";
 import { decryptStoredSecret } from "../../lib/crypto";
 import { childLogger } from "../../lib/logger";
 import { executeJob, jobs, startScheduler, stopScheduler } from "../../cron/scheduler";
-import { messageQueueWorker } from "../message-queue";
+import { channelRate, localThrottle, messageQueueWorker } from "../message-queue";
 import { marketingWorker } from "../marketing-worker";
 import { webhookWorker } from "../webhooks.service";
 import { automationWorker } from "../automations.service";
@@ -254,7 +254,7 @@ class QueueManager {
     );
     for (const w of this.workers) w.on("failed", (job, err) => log.warn({ queue: w.name, job: job?.name, err: err.message }, "Queue job failed"));
 
-    messageQueueWorker.throttle = (channelId) => acquireSendSlot(redis, s.prefix, channelId, config.MESSAGE_RATE_PER_SECOND);
+    messageQueueWorker.throttle = (channel) => acquireSendSlot(redis, s.prefix, channel.id, channelRate(channel));
     setWakeImpl((kind) => void work.add(kind, {}, { jobId: `wake-${kind}`, removeOnComplete: true, removeOnFail: true }).catch(() => {}));
 
     // Realtime events reach users connected to any server.
@@ -283,7 +283,7 @@ class QueueManager {
     }
     if (this.heartbeat) clearInterval(this.heartbeat);
     this.heartbeat = null;
-    messageQueueWorker.throttle = async () => {};
+    messageQueueWorker.throttle = localThrottle;
     // With Redis down, closing would wait for it forever: drop the connections first, then
     // close without waiting for running jobs (their rows stay claimed and are recovered later).
     const healthy = this.redis?.status === "ready";

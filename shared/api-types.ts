@@ -50,6 +50,13 @@ export interface PublicChannel {
   createdBy: string | null;
   createdAt: string | null;
   tokenPreview: string;
+  /** Number shared with the WhatsApp Business app (Coexistence). */
+  isCoexistence: boolean;
+  businessId: string | null;
+  /** Embedded Signup progress (see shared/whatsapp-signup.ts ChannelOnboarding). */
+  onboarding: Record<string, unknown> | null;
+  /** A two-step verification PIN we set is stored (it can be revealed by the admin). */
+  hasPin: boolean;
 }
 
 export const UPDATE_STEPS = ["backup", "replace", "dependencies", "build", "database", "restart", "complete"] as const;

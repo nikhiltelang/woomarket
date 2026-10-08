@@ -35,6 +35,11 @@ export function buildWebhookPayload(channel: Channel, value: Record<string, unkn
   };
 }
 
+/** Delivers a webhook payload to the handler after a delay (simulated Meta callbacks). */
+export function emitSimulated(delayMs: number, payload: unknown) {
+  emitLater(delayMs, payload);
+}
+
 function emitLater(delayMs: number, payload: unknown) {
   const t = setTimeout(() => {
     sink?.(payload).catch((err) => log.warn({ err: (err as Error).message }, "Simulated webhook failed"));

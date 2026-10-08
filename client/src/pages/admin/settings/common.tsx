@@ -14,6 +14,7 @@ export type AdminSystemConfig = Omit<SystemConfig, "extensionSettings"> & {
     googleLogin: { enabled: boolean; clientId: string; hasClientSecret: boolean };
     microsoftLogin: { enabled: boolean; clientId: string; tenant: string; hasClientSecret: boolean };
     aiAssistant: { enabled: boolean; model: string; monthlyLimit: number; hasApiKey: boolean };
+    whatsappSignup: { enabled: boolean; appId: string; configId: string; coexistence: boolean; hasAppSecret: boolean; envAppSecret: boolean };
     queue: { enabled: boolean; prefix: string; concurrency: number; urlMasked: string | null; envUrl: string | null };
   };
 };

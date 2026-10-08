@@ -5,6 +5,7 @@ import { queueManager, queueSettings, testRedis } from "../services/queue/manage
 import { usersRepository } from "../repositories/users.repository";
 import { agencyOf, brandsRepository, toPublicBrand } from "../services/white-label.service";
 import { aiSettingsSchema, DEFAULT_AI_MODEL, DEFAULT_AI_MONTHLY_LIMIT } from "@shared/ai";
+import { signupSettingsSchema } from "@shared/whatsapp-signup";
 import { z } from "zod";
 import {
   brandingSchema,
@@ -46,6 +47,10 @@ function adminView(s: SystemConfig) {
         const q = s.extensionSettings?.queue;
         const url = q?.url ? decryptStoredSecret(q.url) : null;
         return { enabled: q ? q.enabled : Boolean(config.REDIS_URL), prefix: q?.prefix ?? "wm360", concurrency: q?.concurrency ?? 2, urlMasked: url ? maskRedisUrl(url) : null, envUrl: config.REDIS_URL ? maskRedisUrl(config.REDIS_URL) : null };
+      })(),
+      whatsappSignup: (() => {
+        const w = s.extensionSettings?.whatsappSignup;
+        return { enabled: Boolean(w?.enabled), appId: w?.appId ?? "", configId: w?.configId ?? "", coexistence: w?.coexistence ?? true, hasAppSecret: Boolean(w?.appSecret), envAppSecret: Boolean(config.WHATSAPP_APP_SECRET) };
       })(),
       aiAssistant: { enabled: Boolean(s.extensionSettings?.aiAssistant?.enabled), model: s.extensionSettings?.aiAssistant?.model ?? DEFAULT_AI_MODEL, monthlyLimit: s.extensionSettings?.aiAssistant?.monthlyLimit ?? DEFAULT_AI_MONTHLY_LIMIT, hasApiKey: Boolean(s.extensionSettings?.aiAssistant?.apiKey) },
     },
@@ -108,6 +113,7 @@ const SECTIONS = {
   frontend: frontendSettingsSchema,
   "social-login": socialLoginSchema,
   "ai-assistant": aiSettingsSchema,
+  "whatsapp-signup": signupSettingsSchema,
   queue: queueSettingsSchema,
   maintenance: maintenanceSchema,
   "gdpr-cookie": gdprCookieSchema,
@@ -147,6 +153,13 @@ export async function updateSection(req: Request, res: Response) {
       const url = input.url ? encryptStoredSecret(input.url) : prev?.url;
       if (input.enabled && !url && !config.REDIS_URL) throw badRequest("Enter the Redis URL to turn Redis mode on");
       patch = { extensionSettings: { ...current.extensionSettings, queue: { enabled: input.enabled, url, prefix: input.prefix, concurrency: input.concurrency } } };
+      break;
+    }
+    case "whatsapp-signup": {
+      const prev = current.extensionSettings?.whatsappSignup;
+      const appSecret = input.appSecret ? encryptSecret(input.appSecret) : prev?.appSecret;
+      if (input.enabled && (!input.appId || !input.configId || (!appSecret && !config.WHATSAPP_APP_SECRET))) throw badRequest("App ID, App secret and configuration ID are all needed to turn Embedded Signup on");
+      patch = { extensionSettings: { ...current.extensionSettings, whatsappSignup: { enabled: input.enabled, appId: input.appId, configId: input.configId, coexistence: input.coexistence, appSecret } } };
       break;
     }
     case "ai-assistant": {
