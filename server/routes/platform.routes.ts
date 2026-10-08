@@ -55,6 +55,8 @@ platformRoutes.post("/system-config/cron-jobs/:jobKey/run", sa, h(sys.runCronJob
 platformRoutes.post("/system-config/test-email", sa, h(sys.testEmail));
 platformRoutes.post("/system-config/ai/test", sa, h(ai.test));
 platformRoutes.get("/system-config/ai/usage", sa, h(ai.usage));
+platformRoutes.post("/system-config/queue/test", sa, h(sys.testQueue));
+platformRoutes.get("/system-config/queue/status", sa, h(sys.queueStatus));
 platformRoutes.put("/system-config/:section", sa, h(sys.updateSection));
 platformRoutes.put("/brand-settings", sa, imageUpload.fields([{ name: "logo", maxCount: 1 }, { name: "favicon", maxCount: 1 }]), h(sys.updateBranding));
 

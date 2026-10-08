@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AI_MODELS } from "@shared/ai";
+import type { QueueStatus } from "@shared/queue";
 import { Copy, ExternalLink, Send } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -349,6 +350,93 @@ function SocialLoginForm({ c }: { c: SystemConfigResponse }) {
   );
 }
 
+// --- Queue & scaling ---------------------------------------------------------------------------
+
+function QueueForm({ c }: { c: SystemConfigResponse }) {
+  const toast = useToast();
+  const q = c.data.extensionSettings.queue;
+  const [v, setV] = useState({ enabled: q.enabled, url: "", prefix: q.prefix, concurrency: q.concurrency });
+  const save = useSaveSection("queue", "Queue settings saved");
+  const status = useQuery<{ data: QueueStatus }>({ queryKey: ["/api/system-config/queue/status"], refetchInterval: 5000 });
+  const test = useMutation({
+    mutationFn: () => apiRequest<{ data: { version: string | null; latencyMs: number } }>("POST", "/api/system-config/queue/test", v.url ? { url: v.url } : {}),
+    onSuccess: (r) => toast({ title: "Connected to Redis", description: `Version ${r.data.version ?? "?"} · ${r.data.latencyMs} ms`, variant: "success" }),
+    onError: (err) => toast({ title: "Connection failed", description: (err as Error).message, variant: "error" }),
+  });
+  const st = status.data?.data;
+  const hasUrl = Boolean(v.url || q.urlMasked || q.envUrl);
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionCard>
+        <div className="flex max-w-2xl flex-col gap-5">
+          <Switch
+            label="Redis / BullMQ mode"
+            description="Off: one server sends messages and runs scheduled jobs by polling the database (fine for most installs). On: every server shares the work through Redis, scheduled jobs run once across the cluster, and live inbox updates reach users on any server."
+            checked={v.enabled}
+            onChange={(enabled) => setV({ ...v, enabled })}
+          />
+          <Field
+            label="Redis URL"
+            htmlFor="q-url"
+            hint={q.urlMasked ? <>Saved: <code>{q.urlMasked}</code>. Leave blank to keep it.</> : q.envUrl ? <>Using <code>REDIS_URL</code> from the environment: <code>{q.envUrl}</code></> : "redis://:password@host:6379/0, or rediss:// for TLS (managed Redis like AWS ElastiCache, Upstash, Redis Cloud)."}
+          >
+            <Input id="q-url" type="password" autoComplete="off" value={v.url} onChange={(e) => setV({ ...v, url: e.target.value })} placeholder="redis://:password@redis.internal:6379/0" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Key prefix" htmlFor="q-prefix" hint="Lets several installs share one Redis.">
+              <Input id="q-prefix" value={v.prefix} onChange={(e) => setV({ ...v, prefix: e.target.value })} maxLength={40} />
+            </Field>
+            <Field label="Batches per server at once" htmlFor="q-conc" hint="Per kind of work (WhatsApp, email/SMS, webhooks).">
+              <Input id="q-conc" type="number" min={1} max={20} value={v.concurrency} onChange={(e) => setV({ ...v, concurrency: Number(e.target.value) })} />
+            </Field>
+          </div>
+          <div>
+            <Button variant="outline" onClick={() => test.mutate()} loading={test.isPending} disabled={!hasUrl}>Test connection</Button>
+          </div>
+          <p className="text-xs text-fg-muted">Saving applies the change on this server immediately and on the others within 15 seconds; no restart. If Redis can't be reached, servers keep working in database mode. WhatsApp sends are limited per number across all servers (MESSAGE_RATE_PER_SECOND, default 40).</p>
+        </div>
+        <SaveBar pending={save.isPending} disabled={v.enabled && !hasUrl} onSave={() => save.mutate({ enabled: v.enabled, prefix: v.prefix.trim(), concurrency: v.concurrency, ...(v.url ? { url: v.url.trim() } : {}) })} />
+      </SectionCard>
+
+      <SectionCard>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="mr-auto text-sm font-semibold">Status</h2>
+          {st && <Badge tone={st.mode === "redis" ? "success" : "neutral"}>{st.mode === "redis" ? "Redis / BullMQ" : "Database polling"}</Badge>}
+          {st && st.desired !== st.mode && <Badge tone="warning">Switching…</Badge>}
+        </div>
+        {!st ? (
+          <p className="mt-2 text-sm text-fg-muted">Loading…</p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-4 text-sm">
+            {st.lastError && <p className="rounded-md bg-danger-soft px-3 py-2 text-danger">{st.lastError}</p>}
+            <p className="text-fg-muted">This server: <code>{st.instance}</code> · in this mode since {new Date(st.since).toLocaleString()}</p>
+            {st.mode === "redis" && (
+              <>
+                <p className="text-fg-muted">Redis {st.redis?.version ?? "?"} · {st.redis?.usedMemory ?? "?"} used · {st.scheduled} scheduled jobs</p>
+                <div>
+                  <p className="mb-1 font-medium">Servers ({st.instances.length})</p>
+                  <ul className="space-y-1">
+                    {st.instances.map((i) => <li key={i.id} className="font-mono text-xs">{i.host} · pid {i.pid} · up since {new Date(i.startedAt).toLocaleString()}</li>)}
+                  </ul>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead><tr className="text-fg-muted"><th className="py-1">Queue</th><th>Waiting</th><th>Active</th><th>Delayed</th><th>Failed</th><th>Completed</th></tr></thead>
+                    <tbody>
+                      {st.queues.map((x) => <tr key={x.name} className="border-t border-border"><td className="py-1 font-medium">{x.name}</td><td>{x.waiting}</td><td>{x.active}</td><td>{x.delayed}</td><td className={x.failed ? "text-danger" : ""}>{x.failed}</td><td>{x.completed}</td></tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {st.mode === "database" && <p className="text-fg-muted">Workers run on server instance 0 only. Add more servers safely by turning Redis mode on first.</p>}
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
 // --- AI assistant ------------------------------------------------------------------------------
 
 function AiAssistantForm({ c }: { c: SystemConfigResponse }) {
@@ -494,6 +582,7 @@ export const SECTIONS: Record<string, { title: string; description: string; rend
   notification: { title: "Notification setting", description: "How platform emails are sent and how they look.", render: (c) => <NotificationForm c={c} />, wide: true },
   seo: { title: "SEO configuration", description: "Injected into every page served by the app.", render: (c) => <SeoForm c={c} /> },
   frontend: { title: "Manage frontend", description: "Content of the public sign-in and sign-up pages.", render: (c) => <FrontendForm c={c} /> },
+  queue: { title: "Queue & scaling", description: "Optional Redis / BullMQ for running several servers.", render: (c) => <QueueForm c={c} /> },
   "ai-assistant": { title: "AI assistant", description: "Claude-powered drafting, reply suggestions and summaries.", render: (c) => <AiAssistantForm c={c} /> },
   "social-login": { title: "Social login setting", description: "Single sign-on with Google and Microsoft.", render: (c) => <SocialLoginForm c={c} /> },
   maintenance: { title: "Maintenance mode", description: "Temporarily take the app offline for tenants.", render: (c) => <MaintenanceForm c={c} /> },

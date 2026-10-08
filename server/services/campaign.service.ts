@@ -1,4 +1,5 @@
 import type { Campaign, Channel, Contact } from "@shared/schema";
+import { wakeWork } from "./queue/wake";
 import { loadSegment, segmentCondition } from "./segments.service";
 import type { CreateCampaignInput } from "@shared/validation";
 import { campaignsRepository } from "../repositories/campaigns.repository";
@@ -176,6 +177,7 @@ export async function startCampaign(campaignId: string): Promise<Campaign> {
     throw err;
   }
 
+  wakeWork("whatsapp");
   const fresh = (await campaignsRepository.findById(campaign.id))!;
   realtime.toChannel(fresh.channelId, "campaign_updated", { campaign: fresh });
   return fresh;

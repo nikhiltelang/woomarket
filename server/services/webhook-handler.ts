@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { processSocialPayload } from "./social.service";
 import type { WebhookEvent } from "@shared/webhooks";
 import { emit } from "./webhooks.service";
 import { contactData, emitForChannel } from "./webhook-events";
@@ -268,6 +269,8 @@ async function handleTemplateStatus(value: { event?: string; message_template_id
 
 /** Processes a Meta webhook payload (or an identical simulated one). */
 export async function processWebhookPayload(payload: any, onlyChannelId?: string): Promise<void> {
+  // Messenger and Instagram events share the app's webhook with WhatsApp.
+  if (payload?.object === "page" || payload?.object === "instagram") return processSocialPayload(payload);
   if (payload?.object !== "whatsapp_business_account") return;
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {

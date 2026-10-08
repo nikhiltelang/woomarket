@@ -1,4 +1,6 @@
 import type { Channel, Contact, Conversation, Message } from "@shared/schema";
+import { isSocialType } from "@shared/social";
+import { sendSocialReply, socialAccountsRepository } from "./social.service";
 import type { z } from "zod";
 import type { sendMessageSchema } from "@shared/validation";
 import { conversationsRepository, messagesRepository } from "../repositories/conversations.repository";
@@ -43,6 +45,12 @@ export async function sendConversationMessage(
   input: z.infer<typeof sendMessageSchema>,
 ): Promise<Message> {
   if (conversation.type === "web") return sendWebReply(user, channel, conversation, input);
+  if (isSocialType(conversation.type)) {
+    if (input.type !== "text") throw unprocessable(`${conversation.type === "instagram" ? "Instagram" : "Messenger"} conversations support text replies only.`, "SOCIAL_TEXT_ONLY");
+    const account = conversation.socialAccountId ? await socialAccountsRepository.find(conversation.socialAccountId) : undefined;
+    if (!account || !account.enabled) throw unprocessable("This Messenger/Instagram account is disconnected. Reconnect it under Instagram & Messenger.", "SOCIAL_DISCONNECTED");
+    return sendSocialReply(account, conversation, input.text, { id: user.id, username: user.username });
+  }
   if (!conversation.contactPhone) throw unprocessable("Conversation has no recipient phone number");
   if (channel.createdBy) await assertMessageQuota(channel.createdBy, 1);
   const client = whatsappFactory.create(channel);

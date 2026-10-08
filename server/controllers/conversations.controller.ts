@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import { isSocialType } from "@shared/social";
+import { publicAccount, replyPolicy, socialAccountsRepository } from "../services/social.service";
 import { z } from "zod";
 import {
   conversationListQuery,
@@ -39,6 +41,12 @@ export async function listConversations(req: Request, res: Response) {
 export async function getConversation(req: Request, res: Response) {
   const { conversation } = await loadConversation(req);
   const contact = conversation.contactId ? await contactsRepository.findById(conversation.contactId) : undefined;
+  if (isSocialType(conversation.type)) {
+    // Messenger / Instagram: 24 hours, or 7 days when the account may use the Human Agent tag.
+    const account = conversation.socialAccountId ? await socialAccountsRepository.find(conversation.socialAccountId) : undefined;
+    const policy = account ? replyPolicy(conversation, account.humanAgentTag) : "closed";
+    return res.json({ data: { ...conversation, windowOpen: policy !== "closed", replyPolicy: policy }, contact: null, social: account ? publicAccount(account) : null });
+  }
   res.json({ data: withWindow(conversation), contact: contact ?? null });
 }
 

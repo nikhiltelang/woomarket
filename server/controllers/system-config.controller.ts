@@ -1,4 +1,7 @@
 import type { Request, Response } from "express";
+import { config } from "../config";
+import { maskRedisUrl, queueSettingsSchema } from "@shared/queue";
+import { queueManager, queueSettings, testRedis } from "../services/queue/manager";
 import { usersRepository } from "../repositories/users.repository";
 import { agencyOf, brandsRepository, toPublicBrand } from "../services/white-label.service";
 import { aiSettingsSchema, DEFAULT_AI_MODEL, DEFAULT_AI_MONTHLY_LIMIT } from "@shared/ai";
@@ -21,7 +24,7 @@ import {
 import type { SystemConfig } from "@shared/schema";
 import { parse } from "../lib/http";
 import { badRequest, notFound, unprocessable } from "../lib/errors";
-import { encryptSecret } from "../lib/crypto";
+import { decryptStoredSecret, encryptSecret, encryptStoredSecret } from "../lib/crypto";
 import { publicBaseUrl } from "../lib/tokens";
 import { removeUpload, saveImage } from "../lib/uploads";
 import { activityRepository } from "../repositories/activity.repository";
@@ -39,6 +42,11 @@ function adminView(s: SystemConfig) {
     extensionSettings: {
       googleLogin: { enabled: Boolean(google?.enabled), clientId: google?.clientId ?? "", hasClientSecret: Boolean(google?.clientSecret) },
       microsoftLogin: { enabled: Boolean(microsoft?.enabled), clientId: microsoft?.clientId ?? "", tenant: microsoft?.tenant ?? "common", hasClientSecret: Boolean(microsoft?.clientSecret) },
+      queue: (() => {
+        const q = s.extensionSettings?.queue;
+        const url = q?.url ? decryptStoredSecret(q.url) : null;
+        return { enabled: q ? q.enabled : Boolean(config.REDIS_URL), prefix: q?.prefix ?? "wm360", concurrency: q?.concurrency ?? 2, urlMasked: url ? maskRedisUrl(url) : null, envUrl: config.REDIS_URL ? maskRedisUrl(config.REDIS_URL) : null };
+      })(),
       aiAssistant: { enabled: Boolean(s.extensionSettings?.aiAssistant?.enabled), model: s.extensionSettings?.aiAssistant?.model ?? DEFAULT_AI_MODEL, monthlyLimit: s.extensionSettings?.aiAssistant?.monthlyLimit ?? DEFAULT_AI_MONTHLY_LIMIT, hasApiKey: Boolean(s.extensionSettings?.aiAssistant?.apiKey) },
     },
     maintenanceMode: s.maintenanceMode,
@@ -100,6 +108,7 @@ const SECTIONS = {
   frontend: frontendSettingsSchema,
   "social-login": socialLoginSchema,
   "ai-assistant": aiSettingsSchema,
+  queue: queueSettingsSchema,
   maintenance: maintenanceSchema,
   "gdpr-cookie": gdprCookieSchema,
   "custom-css": customCssSchema,
@@ -133,6 +142,13 @@ export async function updateSection(req: Request, res: Response) {
     case "request-logs":
       patch = { requestLogSettings: { ...input, excludePaths: [...new Set(input.excludePaths as string[])] } };
       break;
+    case "queue": {
+      const prev = current.extensionSettings?.queue;
+      const url = input.url ? encryptStoredSecret(input.url) : prev?.url;
+      if (input.enabled && !url && !config.REDIS_URL) throw badRequest("Enter the Redis URL to turn Redis mode on");
+      patch = { extensionSettings: { ...current.extensionSettings, queue: { enabled: input.enabled, url, prefix: input.prefix, concurrency: input.concurrency } } };
+      break;
+    }
     case "ai-assistant": {
       const prev = current.extensionSettings?.aiAssistant;
       const apiKey = input.apiKey ? encryptSecret(input.apiKey) : prev?.apiKey;
@@ -158,6 +174,8 @@ export async function updateSection(req: Request, res: Response) {
       patch = input;
   }
   const updated = await systemConfig.update(patch);
+  // Apply queue changes here now; other servers pick them up within 15 seconds.
+  if (section === "queue") await queueManager.reconcile();
   await activityRepository.record(req, req.user!.id, "system_config_updated", { type: "system_config", id: section });
   res.json({ data: adminView(updated) });
 }
@@ -243,3 +261,22 @@ export async function runCronJob(req: Request, res: Response) {
   res.json({ data: result });
 }
 
+
+
+/** POST /api/system-config/queue/test { url? } — tries the URL (or the saved one). */
+export async function testQueue(req: Request, res: Response) {
+  const body = (req.body ?? {}) as { url?: string };
+  const url = typeof body.url === "string" && body.url.trim() ? body.url.trim() : (await queueSettings()).url;
+  if (!url) throw badRequest("Enter a Redis URL to test");
+  if (!/^rediss?:\/\//.test(url)) throw badRequest("Use a redis:// or rediss:// URL");
+  try {
+    res.json({ data: await testRedis(url) });
+  } catch (err) {
+    throw badRequest(`Couldn't connect: ${(err as Error).message}`);
+  }
+}
+
+/** GET /api/system-config/queue/status */
+export async function queueStatus(_req: Request, res: Response) {
+  res.json({ data: await queueManager.status() });
+}

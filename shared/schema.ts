@@ -281,6 +281,8 @@ export const conversations = mysqlTable(
     aiInsights: json("ai_insights").$type<Record<string, unknown>>(),
     aiAnalyzedAt: ts("ai_analyzed_at"),
     /** Website chat (type "web"): what the visitor told us and where they chatted from. */
+    /** Messenger / Instagram conversations: the connected account they came through. */
+    socialAccountId: char("social_account_id", { length: 36 }),
     webVisitor: json("web_visitor").$type<{ name?: string | null; email?: string | null; phone?: string | null; page?: string | null; origin?: string | null; widgetId: string }>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -696,6 +698,8 @@ export const emailCampaignRecipients = mysqlTable(
     clickedAt: ts("clicked_at"),
     /** Not sent before this time (local-time / best-time delivery, quiet hours). */
     sendAfter: ts("send_after"),
+    /** When a worker claimed the row (status "processing"); stale claims are recovered. */
+    claimedAt: ts("claimed_at"),
     variant: varchar("variant", { length: 1 }),
     errorMessage: text("error_message"),
     /** Provider message id (SES MessageId), used to match bounce and complaint notifications. */
@@ -799,6 +803,8 @@ export const smsCampaignRecipients = mysqlTable(
     clickedAt: ts("clicked_at"),
     /** Not sent before this time (local-time / best-time delivery, quiet hours). */
     sendAfter: ts("send_after"),
+    /** When a worker claimed the row (status "processing"); stale claims are recovered. */
+    claimedAt: ts("claimed_at"),
     variant: varchar("variant", { length: 1 }),
     messageId: text("message_id"),
     errorMessage: text("error_message"),
@@ -852,6 +858,8 @@ export interface ExtensionSettings {
   microsoftLogin?: { enabled: boolean; clientId: string; clientSecret?: string; tenant: string };
   /** Claude-powered assistant. apiKey is encrypted; monthlyLimit -1 = unlimited (per tenant). */
   aiAssistant?: { enabled: boolean; apiKey?: string; model: string; monthlyLimit: number };
+  /** Optional Redis / BullMQ mode. url is encrypted. */
+  queue?: { enabled: boolean; url?: string; prefix: string; concurrency: number };
 }
 
 export const systemConfigurations = mysqlTable("system_configurations", {
@@ -1267,6 +1275,47 @@ export const tenantSettings = mysqlTable("tenant_settings", {
 });
 
 // ---------------------------------------------------------------------------
+// Instagram & Messenger accounts
+// ---------------------------------------------------------------------------
+
+export const socialAccounts = mysqlTable(
+  "social_accounts",
+  {
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Inbox where the conversations land. */
+    channelId: char("channel_id", { length: 36 })
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    /** "messenger" | "instagram" */
+    platform: varchar("platform", { length: 12 }).notNull(),
+    /** Facebook Page id (both platforms send through the Page). */
+    pageId: varchar("page_id", { length: 40 }).notNull(),
+    /** Id in webhook entries: the Page id (Messenger) or the Instagram account id. */
+    externalId: varchar("external_id", { length: 40 }).notNull(),
+    name: varchar("name", { length: 200 }).notNull(),
+    username: varchar("username", { length: 100 }),
+    pictureUrl: varchar("picture_url", { length: 1000 }),
+    /** Encrypted Page access token. */
+    accessToken: text("access_token").notNull(),
+    simulated: boolean("simulated").notNull().default(false),
+    humanAgentTag: boolean("human_agent_tag").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(true),
+    /** connected | error */
+    status: varchar("status", { length: 20 }).notNull().default("connected"),
+    lastError: varchar("last_error", { length: 500 }),
+    connectedAt: ts("connected_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("social_accounts_platform_external").on(t.platform, t.externalId), index("social_accounts_user_idx").on(t.userId)],
+);
+export type SocialAccount = InferSelectModel<typeof socialAccounts>;
+
+// ---------------------------------------------------------------------------
 // White-label (agencies reselling the platform)
 // ---------------------------------------------------------------------------
 
@@ -1592,6 +1641,7 @@ export const MANAGED_TABLES = [
   "chat_widgets",
   "brands",
   "brand_domains",
+  "social_accounts",
 ] as const;
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { webhookWorker } from "./services/webhooks.service";
+import { queueManager } from "./services/queue/manager";
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
@@ -10,9 +10,6 @@ import { runStartupMigrations } from "./startup-migration";
 import { createApp } from "./app";
 import { MySqlSessionStore } from "./session-store";
 import { attachRealtime, closeRealtime } from "./services/realtime";
-import { messageQueueWorker } from "./services/message-queue";
-import { marketingWorker } from "./services/marketing-worker";
-import { startScheduler, stopScheduler } from "./cron/scheduler";
 import { flushRequestLogs } from "./services/request-log.service";
 import { reconcileStaleRuns } from "./app-update/reconciler";
 import { runSeed } from "./seed";
@@ -75,13 +72,9 @@ export async function start(): Promise<void> {
   await new Promise<void>((resolve) => server.listen(config.PORT, config.HOST, resolve));
   logger.info({ port: config.PORT, env: config.NODE_ENV }, `${config.APP_NAME} listening on http://localhost:${config.PORT}`);
 
-  if (config.isCronLeader) {
-    await reconcileStaleRuns().catch((err) => logger.error({ err }, "Update-run reconciler failed"));
-    messageQueueWorker.start();
-    await marketingWorker.start();
-    webhookWorker.start();
-    startScheduler();
-  }
+  if (config.isCronLeader) await reconcileStaleRuns().catch((err) => logger.error({ err }, "Update-run reconciler failed"));
+  // Database polling on the leader, or BullMQ workers on every server (Superadmin → Queue & scaling).
+  await queueManager.start();
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -93,10 +86,7 @@ export async function start(): Promise<void> {
       process.exit(1);
     }, config.SHUTDOWN_TIMEOUT_MS);
     force.unref();
-    stopScheduler();
-    await messageQueueWorker.stop();
-    await marketingWorker.stop();
-    await webhookWorker.stop();
+    await queueManager.stop();
     await closeRealtime();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     server.closeAllConnections?.();

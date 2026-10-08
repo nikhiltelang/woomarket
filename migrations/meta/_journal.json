@@ -155,6 +155,20 @@
       "when": 1791462232901,
       "tag": "0021_white_label",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1791464763546,
+      "tag": "0022_social_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1791465510493,
+      "tag": "0023_claimed_at",
+      "breakpoints": true
     }
   ]
 }

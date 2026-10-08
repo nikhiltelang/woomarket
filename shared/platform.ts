@@ -277,6 +277,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.reports": "Reports",
   "nav.inbox": "Inbox",
   "nav.widget": "Website widget",
+  "nav.social": "Instagram & Messenger",
   "nav.contacts": "Contacts",
   "nav.groups": "Groups",
   "nav.segments": "Segments",

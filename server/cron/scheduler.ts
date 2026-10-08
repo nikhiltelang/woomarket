@@ -10,6 +10,9 @@ import { apiKeysRepository } from "../repositories/api-keys.repository";
 import { decideDueTests } from "../services/ab-test.service";
 import { webhooksRepository } from "../services/webhooks.service";
 import { runDueSchedules } from "../services/report-schedules.service";
+import { queueRepository } from "../services/message-queue";
+import { emailCampaignsRepository } from "../repositories/email.repository";
+import { smsCampaignsRepository } from "../repositories/sms.repository";
 
 const log = childLogger("cron");
 
@@ -62,6 +65,16 @@ export const jobs: Job[] = [
       const { retentionDays } = await requestLogSettings();
       const removed = await requestLogsRepository.deleteOlderThan(new Date(Date.now() - retentionDays * 86400_000));
       return `${removed} log entr${removed === 1 ? "y" : "ies"} older than ${retentionDays} day(s) removed`;
+    },
+  },
+  {
+    key: "stuck-work-recovery",
+    name: "Stuck work recovery",
+    description: "Re-queues WhatsApp messages and email/SMS recipients a crashed server left half-sent (only claims older than a few minutes).",
+    intervalMs: 5 * 60 * 1000,
+    run: async () => {
+      const [wa] = await Promise.all([queueRepository.recoverStuck(), emailCampaignsRepository.recoverProcessing(), smsCampaignsRepository.recoverProcessing()]);
+      return `${wa} WhatsApp message(s) re-queued`;
     },
   },
   {

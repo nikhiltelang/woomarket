@@ -44,6 +44,10 @@ const schema = z.object({
   MESSAGE_QUEUE_INTERVAL_MS: z.coerce.number().int().min(200).default(5000),
   MESSAGE_QUEUE_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(50),
   MESSAGE_SEND_DELAY_MS: z.coerce.number().int().min(0).default(100),
+  /** Redis mode: WhatsApp messages per second per number, across all servers. */
+  MESSAGE_RATE_PER_SECOND: z.coerce.number().int().min(1).max(1000).default(40),
+  /** Default Redis URL when the superadmin hasn't saved one (Settings → Queue & scaling). */
+  REDIS_URL: z.string().optional(),
   MESSAGE_QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
 
   APP_UPDATE_ROOT: z.string().optional(),

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isSocialType, SOCIAL_LABELS, type PublicSocialAccount } from "@shared/social";
 import { AiInsightsPanel, AiReplySuggestions, IntentBadge } from "@/components/ai";
 import type { ConversationInsights } from "@shared/ai";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -120,6 +121,7 @@ function ConversationList({
                     <span className="mt-1 flex flex-wrap gap-1">
                       {c.status !== "open" && <StatusBadge status={c.status} />}
                       {c.type === "web" && <Badge tone="info"><Globe className="h-3 w-3" /> Website</Badge>}
+                      {isSocialType(c.type) && <Badge tone="info">{SOCIAL_LABELS[c.type]}</Badge>}
                       {c.assigneeName && <Badge>@{c.assigneeName}</Badge>}
                       <IntentBadge insights={c.aiInsights as Partial<ConversationInsights> | null} />
                     </span>
@@ -268,7 +270,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   const bottom = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const conv = useQuery<{ data: ConversationRow; contact: Contact | null }>({ queryKey: [`/api/conversations/${id}`] });
+  const conv = useQuery<{ data: ConversationRow & { replyPolicy?: string }; contact: Contact | null; social?: PublicSocialAccount | null }>({ queryKey: [`/api/conversations/${id}`] });
   const msgs = useQuery<{ data: Message[] }>({ queryKey: [...messagesKey(id), { limit: 100 }] });
   const assignees = useQuery<{ data: Assignee[] }>({ queryKey: ["/api/team/assignees"], enabled: can("inbox:assign") });
 
@@ -381,7 +383,11 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
 
         {can("inbox:send") && (
           <div className="border-t border-border bg-surface p-3">
-            {!c.windowOpen ? (
+            {!c.windowOpen && isSocialType(c.type) ? (
+              <div className="flex items-center gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+                <Clock className="h-4 w-4 shrink-0" /> {SOCIAL_LABELS[c.type]} only allows replies within 24 hours of the customer's last message{conv.data.social?.humanAgentTag ? " (7 days with the Human Agent tag)" : ""}. You can reply when they write again.
+              </div>
+            ) : !c.windowOpen ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
                 <span className="flex items-center gap-2">
                   <Clock className="h-4 w-4" /> The 24-hour reply window is closed. Send an approved template to restart the conversation.
@@ -392,9 +398,10 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               </div>
             ) : (
               <>
+              {c.replyPolicy === "human_agent" && <p className="mb-2 text-xs text-fg-muted">Past 24 hours: replies are sent with Meta's Human Agent tag and must come from a person.</p>}
               <AiReplySuggestions key={id} conversationId={id} onPick={(t) => setText(t)} />
               <div className="flex items-end gap-2">
-                {c.type !== "web" && (
+                {c.type !== "web" && !isSocialType(c.type) && (
                   <Button variant="ghost" size="icon" onClick={() => setTemplateOpen(true)} aria-label="Send a template">
                     <FileText className="h-4 w-4" />
                   </Button>
@@ -433,6 +440,12 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
           <p className="font-semibold">{c.contactName}</p>
           <p className="text-sm text-fg-muted">{c.contactPhone}</p>
         </div>
+        {isSocialType(c.type) && conv.data.social && (
+          <div className="mt-4 rounded-md bg-subtle p-3 text-xs">
+            <p className="font-medium">{SOCIAL_LABELS[c.type]} · {conv.data.social.name}</p>
+            <p className="mt-1 text-fg-muted">Text replies only. {conv.data.social.simulated ? "Test connection (simulator)." : ""}</p>
+          </div>
+        )}
         {c.type === "web" && c.webVisitor && (
           <div className="mt-4 rounded-md bg-subtle p-3 text-xs">
             <p className="mb-1 flex items-center gap-1.5 font-medium"><Globe className="h-3.5 w-3.5" /> Website chat</p>

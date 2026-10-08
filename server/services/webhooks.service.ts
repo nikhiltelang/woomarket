@@ -7,6 +7,7 @@
  *   addresses at connect time, so endpoints can't be used to reach the internal network
  *   (including by DNS rebinding). Redirects are not followed.
  */
+import { wakeWork } from "./queue/wake";
 import crypto from "node:crypto";
 import dns from "node:dns";
 import http from "node:http";
@@ -221,7 +222,7 @@ export async function emitEvent(tenantId: string | null | undefined, event: Webh
     await db.insert(webhookDeliveries).values(
       endpoints.map((e) => ({ endpointId: e.id, eventId, event, payload: { id: eventId, event, createdAt, data }, status: "pending", nextAttemptAt: new Date() })),
     );
-    webhookWorker.wake();
+    wakeWork("webhooks");
     return endpoints.length;
   } catch (err) {
     log.warn({ event, err: (err as Error).message }, "Could not queue webhook event");

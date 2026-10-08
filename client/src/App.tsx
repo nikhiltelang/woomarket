@@ -55,6 +55,7 @@ const Webhooks = lazy(() => import("@/pages/webhooks"));
 const Reports = lazy(() => import("@/pages/reports"));
 const WidgetPage = lazy(() => import("@/pages/widget"));
 const WhiteLabel = lazy(() => import("@/pages/white-label"));
+const SocialPage = lazy(() => import("@/pages/social"));
 const AdminWhiteLabel = lazy(() => import("@/pages/admin/white-label"));
 const Preferences = lazy(() => import("@/pages/preferences"));
 
@@ -90,6 +91,7 @@ const routes: RouteDef[] = [
   { path: "/reports", component: Reports, roles: TENANT, permission: "analytics:view" },
   { path: "/widget", component: WidgetPage, roles: TENANT, permission: "settings:view", channel: true },
   { path: "/white-label", component: WhiteLabel, roles: ["admin"] },
+  { path: "/social", component: SocialPage, roles: TENANT, permission: "settings:view", channel: true },
   { path: "/white-label-admin", component: AdminWhiteLabel, roles: SUPER },
   { path: "/account", component: Account },
   { path: "/admin", component: AdminOverview, roles: SUPER },

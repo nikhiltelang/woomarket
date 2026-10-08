@@ -99,6 +99,8 @@ export async function completeCampaignIfDone(campaignId: string): Promise<void> 
 export class MessageQueueWorker {
   private timer: NodeJS.Timeout | null = null;
   private current: Promise<unknown> | null = null;
+  /** Waits for a send slot on a channel; set to a cluster-wide limiter in Redis mode. */
+  throttle: (channelId: string) => Promise<void> = async () => {};
 
   start(): void {
     if (this.timer) return;
@@ -179,6 +181,7 @@ export class MessageQueueWorker {
 
     const attempt = (row.attempts ?? 0) + 1;
     try {
+      await this.throttle(channel.id);
       const { messageId } = await whatsappFactory.create(channel).sendTemplate(row.recipientPhone, {
         name: row.templateName ?? "",
         language: row.templateLanguage ?? "en_US",

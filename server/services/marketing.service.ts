@@ -1,4 +1,5 @@
 import { and, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
+import { wakeWork } from "./queue/wake";
 import { emit } from "./webhooks.service";
 import { campaignCounts, emitForCampaign } from "./webhook-events";
 import { contacts, type EmailCampaign, type SmsCampaign } from "@shared/schema";
@@ -77,6 +78,7 @@ export async function startEmailCampaign(id: string): Promise<EmailCampaign> {
   );
   if (ab) await saveAbState("email", id, abStartState(ab, variants));
   log.info({ campaignId: id, recipients: audience.length, abTest: Boolean(ab) }, "Email campaign started");
+  wakeWork("marketing");
   return (await emailCampaignsRepository.find(id))!;
 }
 
@@ -169,6 +171,7 @@ export async function startSmsCampaign(id: string): Promise<SmsCampaign> {
   );
   if (ab) await saveAbState("sms", id, abStartState(ab, variants));
   log.info({ campaignId: id, recipients: rows.length, credits, provider: provider.kind }, "SMS campaign started");
+  wakeWork("marketing");
   return (await smsCampaignsRepository.find(id))!;
 }
 

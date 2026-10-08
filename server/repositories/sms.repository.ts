@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { smsCampaignRecipients, smsCampaigns, smsGateways, type SmsCampaign, type SmsGateway, type SmsRecipient } from "@shared/schema";
 import { encryptSecret } from "../lib/crypto";
@@ -7,6 +7,9 @@ import { encryptSecret } from "../lib/crypto";
 type NewCampaign = typeof smsCampaigns.$inferInsert;
 type Counter = "sentCount" | "deliveredCount" | "failedCount";
 
+
+/** A recipient "processing" longer than this was abandoned (crash mid-send) and is retried. */
+export const STALE_CLAIM_MS = 10 * 60_000;
 export const smsGatewayRepository = {
   async get(userId: string): Promise<SmsGateway | undefined> {
     const [row] = await db.select().from(smsGateways).where(eq(smsGateways.userId, userId)).orderBy(desc(smsGateways.updatedAt)).limit(1);
@@ -184,7 +187,7 @@ export const smsCampaignsRepository = {
       if (rows.length) {
         await tx
           .update(smsCampaignRecipients)
-          .set({ status: "processing" })
+          .set({ status: "processing", claimedAt: sql`CURRENT_TIMESTAMP(3)` })
           .where(inArray(smsCampaignRecipients.id, rows.map((r) => r.id)));
       }
       return rows;
@@ -192,6 +195,10 @@ export const smsCampaignsRepository = {
   },
 
   async recoverProcessing(): Promise<void> {
-    await db.update(smsCampaignRecipients).set({ status: "pending" }).where(eq(smsCampaignRecipients.status, "processing"));
+    // Only claims older than the stale limit: another server may be sending the rest right now.
+    await db
+      .update(smsCampaignRecipients)
+      .set({ status: "pending", claimedAt: null })
+      .where(and(eq(smsCampaignRecipients.status, "processing"), or(isNull(smsCampaignRecipients.claimedAt), lt(smsCampaignRecipients.claimedAt, new Date(Date.now() - STALE_CLAIM_MS)))));
   },
 };

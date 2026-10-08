@@ -1,4 +1,5 @@
 import type { Server as HttpServer } from "node:http";
+import { Adapter as MemoryAdapter } from "socket.io-adapter";
 import type { Request, RequestHandler } from "express";
 import { Server, type Socket } from "socket.io";
 import jwt from "jsonwebtoken";
@@ -137,4 +138,14 @@ export async function closeRealtime(): Promise<void> {
   if (!io) return;
   await new Promise<void>((resolve) => io!.close(() => resolve()));
   io = null;
+}
+
+/**
+ * Switches Socket.IO between in-memory and Redis broadcasting (Redis mode, several servers).
+ * Connected clients are asked to reconnect so their rooms exist in the new adapter.
+ */
+export function setRealtimeAdapter(adapter: Parameters<Server["adapter"]>[0] | null): void {
+  if (!io) return;
+  io.adapter(adapter ?? MemoryAdapter);
+  io.disconnectSockets();
 }
