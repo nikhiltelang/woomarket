@@ -23,6 +23,8 @@ function providerOf(req: Request): SsoProvider {
 /** GET /api/auth/:provider — redirects to the provider. With ?link=1, links it to the signed-in account. */
 export async function start(req: Request, res: Response) {
   const provider = providerOf(req);
+  // The OAuth callback lives on the platform's domain, so SSO isn't offered on brand domains.
+  if (req.brand) return res.redirect(`/login?error=${provider}_disabled`);
   const s = await ssoSettings(provider);
   const link = req.query.link === "1" && req.session.userId;
   if (!s) return res.redirect(link ? `/account?sso_error=${provider}_disabled` : `/login?error=${provider}_disabled`);

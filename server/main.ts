@@ -27,7 +27,8 @@ async function attachClient(app: Express, server: http.Server) {
     const { createServer } = await import("vite");
     const vite = await createServer({
       configFile: path.resolve(process.cwd(), "vite.config.ts"),
-      server: { middlewareMode: true, hmr: { server } },
+      // White-label domains in development: DEV_ALLOWED_HOSTS=app.agency.test,.localtest.me
+      server: { middlewareMode: true, hmr: { server }, ...(process.env.DEV_ALLOWED_HOSTS ? { allowedHosts: process.env.DEV_ALLOWED_HOSTS.split(",").map((h) => h.trim()).filter(Boolean) } : {}) },
       appType: "custom",
     });
     app.use(vite.middlewares);

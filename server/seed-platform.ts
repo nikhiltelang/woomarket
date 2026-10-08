@@ -7,7 +7,7 @@ const LEVELS = [
   { levelNumber: 1, name: "Starter", description: "New accounts.", badgeColor: "gray" as const, maxChannels: 1, maxContacts: 500, maxMessagesMonthly: 1000, maxCampaigns: 5, aiAssistantEnabled: false, smsEnabled: false, emailEnabled: true, prioritySupport: false, apiAccess: false },
   { levelNumber: 2, name: "Growth", description: "Established senders.", badgeColor: "blue" as const, maxChannels: 3, maxContacts: 5000, maxMessagesMonthly: 20000, maxCampaigns: 50, aiAssistantEnabled: true, smsEnabled: true, emailEnabled: true, prioritySupport: false, apiAccess: false },
   { levelNumber: 3, name: "Business", description: "High-volume teams.", badgeColor: "purple" as const, maxChannels: 10, maxContacts: 50000, maxMessagesMonthly: 250000, maxCampaigns: -1, aiAssistantEnabled: true, smsEnabled: true, emailEnabled: true, prioritySupport: true, apiAccess: true },
-  { levelNumber: 4, name: "Enterprise", description: "No platform limits.", badgeColor: "amber" as const, maxChannels: -1, maxContacts: -1, maxMessagesMonthly: -1, maxCampaigns: -1, aiAssistantEnabled: true, smsEnabled: true, emailEnabled: true, prioritySupport: true, apiAccess: true },
+  { levelNumber: 4, name: "Enterprise", description: "No platform limits.", badgeColor: "amber" as const, maxChannels: -1, maxContacts: -1, maxMessagesMonthly: -1, maxCampaigns: -1, aiAssistantEnabled: true, smsEnabled: true, emailEnabled: true, prioritySupport: true, apiAccess: true, whiteLabel: true },
 ];
 
 const POLICIES = [

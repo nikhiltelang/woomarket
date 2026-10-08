@@ -21,6 +21,8 @@ declare global {
       channel?: Channel;
       rawBody?: Buffer;
       requestId?: string;
+      /** Set when the request arrived on a verified white-label domain. */
+      brand?: import("@shared/schema").Brand;
     }
   }
 }

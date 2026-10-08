@@ -45,6 +45,7 @@ export function makeUser(overrides: Partial<User> = {}): User {
     mercadopagoCustomerId: null,
     accessLevel: null,
     twoFactorEnabledAt: null,
+    resellerId: null,
     ...overrides,
   };
 }
@@ -141,6 +142,7 @@ export function mockSystemConfig(overrides: Partial<SystemConfig> = {}) {
     languageOption: false,
     googleLogin: false,
     microsoftLogin: false,
+    brand: null,
     twoFactorPolicy: (cfg.twoFactorPolicy ?? "optional") as PublicConfig["twoFactorPolicy"],
     frontend: {},
     gdprCookie: cfg.gdprCookie!,

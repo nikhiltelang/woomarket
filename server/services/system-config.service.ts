@@ -42,6 +42,7 @@ async function load(): Promise<Snapshot> {
     languageOption: (system.languageOption ?? true) && languages.length > 1,
     googleLogin: Boolean(google?.enabled && google.clientId && google.clientSecret),
     microsoftLogin: Boolean(microsoft?.enabled && microsoft.clientId && microsoft.clientSecret),
+    brand: null,
     twoFactorPolicy: (["superadmin", "admins"].includes(system.twoFactorPolicy ?? "") ? system.twoFactorPolicy : "optional") as PublicConfig["twoFactorPolicy"],
     frontend: system.frontendSettings ?? {},
     gdprCookie: system.gdprCookie ?? { enabled: false, bannerText: "", acceptButtonText: "Accept", declineButtonText: "Decline", policyUrl: "", cookieLifespanDays: 365 },

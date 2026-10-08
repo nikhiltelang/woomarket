@@ -53,6 +53,9 @@ const ReportRequest = lazy(() => import("@/pages/report-request"));
 const ApiKeys = lazy(() => import("@/pages/api-keys"));
 const Webhooks = lazy(() => import("@/pages/webhooks"));
 const Reports = lazy(() => import("@/pages/reports"));
+const WidgetPage = lazy(() => import("@/pages/widget"));
+const WhiteLabel = lazy(() => import("@/pages/white-label"));
+const AdminWhiteLabel = lazy(() => import("@/pages/admin/white-label"));
 const Preferences = lazy(() => import("@/pages/preferences"));
 
 const TENANT: Role[] = ["admin", "team"];
@@ -85,6 +88,9 @@ const routes: RouteDef[] = [
   { path: "/developers/api-keys", component: ApiKeys, roles: ["admin"] },
   { path: "/developers/webhooks", component: Webhooks, roles: ["admin"] },
   { path: "/reports", component: Reports, roles: TENANT, permission: "analytics:view" },
+  { path: "/widget", component: WidgetPage, roles: TENANT, permission: "settings:view", channel: true },
+  { path: "/white-label", component: WhiteLabel, roles: ["admin"] },
+  { path: "/white-label-admin", component: AdminWhiteLabel, roles: SUPER },
   { path: "/account", component: Account },
   { path: "/admin", component: AdminOverview, roles: SUPER },
   { path: "/users/send-notification", component: SendNotification, roles: SUPER },

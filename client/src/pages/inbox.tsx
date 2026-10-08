@@ -14,6 +14,7 @@ import {
   PinOff,
   Search,
   Send,
+  Globe,
 } from "lucide-react";
 import type { Contact, Conversation, Message, Template } from "@shared/schema";
 import type { Paginated } from "@shared/api-types";
@@ -118,6 +119,7 @@ function ConversationList({
                     </span>
                     <span className="mt-1 flex flex-wrap gap-1">
                       {c.status !== "open" && <StatusBadge status={c.status} />}
+                      {c.type === "web" && <Badge tone="info"><Globe className="h-3 w-3" /> Website</Badge>}
                       {c.assigneeName && <Badge>@{c.assigneeName}</Badge>}
                       <IntentBadge insights={c.aiInsights as Partial<ConversationInsights> | null} />
                     </span>
@@ -392,9 +394,11 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               <>
               <AiReplySuggestions key={id} conversationId={id} onPick={(t) => setText(t)} />
               <div className="flex items-end gap-2">
-                <Button variant="ghost" size="icon" onClick={() => setTemplateOpen(true)} aria-label="Send a template">
-                  <FileText className="h-4 w-4" />
-                </Button>
+                {c.type !== "web" && (
+                  <Button variant="ghost" size="icon" onClick={() => setTemplateOpen(true)} aria-label="Send a template">
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                )}
                 <Textarea
                   value={text}
                   rows={1}
@@ -429,6 +433,15 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
           <p className="font-semibold">{c.contactName}</p>
           <p className="text-sm text-fg-muted">{c.contactPhone}</p>
         </div>
+        {c.type === "web" && c.webVisitor && (
+          <div className="mt-4 rounded-md bg-subtle p-3 text-xs">
+            <p className="mb-1 flex items-center gap-1.5 font-medium"><Globe className="h-3.5 w-3.5" /> Website chat</p>
+            {c.webVisitor.email && <p className="break-all">{c.webVisitor.email}</p>}
+            {c.webVisitor.phone && <p>{c.webVisitor.phone}</p>}
+            {c.webVisitor.page && <p className="mt-1 break-all text-fg-muted" title={c.webVisitor.page}>From {c.webVisitor.page.replace(/^https?:\/\//, "").slice(0, 80)}</p>}
+            <p className="mt-1 text-fg-muted">Replies appear in the visitor's chat window while it's open on their site.</p>
+          </div>
+        )}
         <dl className="mt-6 space-y-3 text-sm">
           {contact?.email && (
             <div>

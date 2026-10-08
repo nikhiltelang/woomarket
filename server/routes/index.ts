@@ -16,6 +16,8 @@ import { groupRoutes } from "./groups.routes";
 import { segmentRoutes } from "./segments.routes";
 import { aiRoutes } from "./ai.routes";
 import { reportRoutes } from "./reports.routes";
+import { widgetRoutes } from "./widget.routes";
+import { whiteLabelPublicRoutes, whiteLabelRoutes } from "./white-label.routes";
 import { templateRoutes } from "./templates.routes";
 import { conversationRoutes } from "./conversations.routes";
 import { campaignRoutes } from "./campaigns.routes";
@@ -45,6 +47,7 @@ export function apiRouter(): Router {
   api.get("/version", (_req, res) => res.json({ version: readVersion(getRoot()) }));
   api.get("/csrf-token", (req, res) => res.json({ csrfToken: issueCsrfToken(req, res) }));
   api.use(platformPublicRoutes);
+  api.use(whiteLabelPublicRoutes);
   api.use("/auth", authRoutes);
   api.use(planRoutes); // GET /admin/plans is public; the rest guard themselves
   api.use("/email-marketing", emailPublicRoutes);
@@ -62,6 +65,8 @@ export function apiRouter(): Router {
   api.use("/segments", segmentRoutes);
   api.use("/ai", aiRoutes);
   api.use("/reports", reportRoutes);
+  api.use("/widgets", widgetRoutes);
+  api.use(whiteLabelRoutes);
   api.use("/templates", templateRoutes);
   api.use("/conversations", conversationRoutes);
   api.use("/campaigns", campaignRoutes);

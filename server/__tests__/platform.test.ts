@@ -130,7 +130,7 @@ describe("superadmin-only endpoints", () => {
 });
 
 describe("access levels", () => {
-  const level = { id: "l1", levelNumber: 1, name: "Starter", description: null, badgeColor: "gray", maxChannels: 1, maxContacts: 2, maxMessagesMonthly: 10, maxCampaigns: 1, aiAssistantEnabled: false, smsEnabled: false, emailEnabled: true, prioritySupport: false, apiAccess: false, createdAt: null, updatedAt: null };
+  const level = { id: "l1", levelNumber: 1, name: "Starter", description: null, badgeColor: "gray", maxChannels: 1, maxContacts: 2, maxMessagesMonthly: 10, maxCampaigns: 1, aiAssistantEnabled: false, smsEnabled: false, emailEnabled: true, prioritySupport: false, apiAccess: false, whiteLabel: false, createdAt: null, updatedAt: null };
 
   beforeEach(() => {
     vi.spyOn(usersRepository, "findById").mockResolvedValue({ ...admin, accessLevel: 1 });

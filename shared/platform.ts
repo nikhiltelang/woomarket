@@ -1,4 +1,5 @@
 /** Platform administration: settings validators, the public config shape and UI translation keys. */
+import type { PublicBrand } from "./white-label";
 import { z } from "zod";
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a hex colour like #16a34a");
@@ -129,6 +130,7 @@ export const accessLevelSchema = z.object({
   maxMessagesMonthly: limit,
   maxCampaigns: limit,
   aiAssistantEnabled: bool,
+  whiteLabel: bool,
   smsEnabled: bool,
   emailEnabled: bool,
   prioritySupport: bool,
@@ -251,6 +253,8 @@ export interface PublicConfig {
   googleLogin: boolean;
   microsoftLogin: boolean;
   twoFactorPolicy: TwoFactorPolicy;
+  /** White-label branding for this domain (or the signed-in client's agency). */
+  brand: PublicBrand | null;
   frontend: { heroTitle?: string; heroSubtitle?: string; features?: string[]; footerText?: string };
   gdprCookie: { enabled: boolean; bannerText: string; acceptButtonText: string; declineButtonText: string; policyUrl: string; cookieLifespanDays: number };
   customCss: string;
@@ -272,6 +276,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.dashboard": "Dashboard",
   "nav.reports": "Reports",
   "nav.inbox": "Inbox",
+  "nav.widget": "Website widget",
   "nav.contacts": "Contacts",
   "nav.groups": "Groups",
   "nav.segments": "Segments",
@@ -308,6 +313,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.logs": "Logs",
   "nav.apiKeys": "API keys",
   "nav.webhooks": "Webhooks",
+  "nav.whiteLabel": "White-label",
   "nav.landingPage": "Landing page",
   "nav.preferences": "Sending preferences",
   "nav.signOut": "Sign out",

@@ -5,6 +5,7 @@ import { conversationsRepository, messagesRepository } from "../repositories/con
 import { renderTemplateBody, templatesRepository } from "../repositories/templates.repository";
 import { AppError, notFound, unprocessable } from "../lib/errors";
 import { realtime } from "./realtime";
+import { usersRepository } from "../repositories/users.repository";
 import { assertMessageQuota } from "./levels.service";
 import { whatsappFactory, WhatsAppApiError } from "./whatsapp";
 import type { AuthUser } from "../types";
@@ -12,6 +13,8 @@ import type { AuthUser } from "../types";
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function isWithinServiceWindow(conversation: Conversation, now = Date.now()): boolean {
+  // Website chats aren't WhatsApp: there's no 24-hour customer service window.
+  if (conversation.type === "web") return true;
   return Boolean(conversation.lastIncomingMessageAt && now - conversation.lastIncomingMessageAt.getTime() < WINDOW_MS);
 }
 
@@ -39,6 +42,7 @@ export async function sendConversationMessage(
   conversation: Conversation,
   input: z.infer<typeof sendMessageSchema>,
 ): Promise<Message> {
+  if (conversation.type === "web") return sendWebReply(user, channel, conversation, input);
   if (!conversation.contactPhone) throw unprocessable("Conversation has no recipient phone number");
   if (channel.createdBy) await assertMessageQuota(channel.createdBy, 1);
   const client = whatsappFactory.create(channel);
@@ -110,6 +114,31 @@ export async function sendConversationMessage(
   }
 
   await conversationsRepository.recordMessage(conversation.id, { text: content, at: now, inbound: false });
+  const fresh = await conversationsRepository.findById(conversation.id);
+  realtime.toChannel(channel.id, "new_message", { conversationId: conversation.id, message });
+  realtime.toChannel(channel.id, "conversation_updated", { conversation: fresh });
+  return message;
+}
+
+/** Website chat reply: stored for the visitor's widget to pick up (no WhatsApp involved). */
+async function sendWebReply(user: AuthUser, channel: Channel, conversation: Conversation, input: z.infer<typeof sendMessageSchema>): Promise<Message> {
+  if (input.type !== "text") throw unprocessable("Website chats support text replies only.", "WEB_TEXT_ONLY");
+  const agent = await usersRepository.findById(user.id);
+  const now = new Date();
+  const message = await messagesRepository.create({
+    conversationId: conversation.id,
+    fromUser: false,
+    direction: "outbound",
+    content: input.text,
+    type: "text",
+    fromType: "agent",
+    messageType: "text",
+    status: "sent",
+    timestamp: now,
+    // Visitors see the agent's first name only.
+    metadata: { sentBy: user.id, sentByName: user.username, agentDisplayName: agent?.firstName || null, channel: "web" },
+  });
+  await conversationsRepository.recordMessage(conversation.id, { text: input.text, at: now, inbound: false });
   const fresh = await conversationsRepository.findById(conversation.id);
   realtime.toChannel(channel.id, "new_message", { conversationId: conversation.id, message });
   realtime.toChannel(channel.id, "conversation_updated", { conversation: fresh });

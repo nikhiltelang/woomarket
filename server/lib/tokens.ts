@@ -8,11 +8,11 @@ import { timingSafeEqualStr } from "./crypto";
 const mac = (purpose: string, id: string) =>
   crypto.createHmac("sha256", sessionSecret()).update(`${purpose}:${id}`).digest("base64url").slice(0, 32);
 
-export function signToken(purpose: "open" | "unsubscribe" | "click", id: string): string {
+export function signToken(purpose: "open" | "unsubscribe" | "click" | "widget", id: string): string {
   return `${id}.${mac(purpose, id)}`;
 }
 
-export function verifyToken(purpose: "open" | "unsubscribe" | "click", token: string): string | null {
+export function verifyToken(purpose: "open" | "unsubscribe" | "click" | "widget", token: string): string | null {
   const dot = token.lastIndexOf(".");
   if (dot <= 0) return null;
   const id = token.slice(0, dot);

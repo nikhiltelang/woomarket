@@ -16,7 +16,9 @@ type Response = { data: LandingPage | { enabled: false }; plans?: LandingPlan[] 
 export default function LandingRoute({ always = false }: { always?: boolean }) {
   const { user, isLoading } = useAuth();
   const { config } = usePlatform();
-  const q = useQuery<Response>({ queryKey: ["/api/landing-page"], enabled: always || (!isLoading && !user), staleTime: 60_000 });
+  // White-label domains skip the platform's marketing page.
+  const branded = Boolean(config?.brand?.onBrandDomain);
+  const q = useQuery<Response>({ queryKey: ["/api/landing-page"], enabled: !branded && (always || (!isLoading && !user)), staleTime: 60_000 });
   const page = q.data?.data;
   useEffect(() => {
     if (page?.enabled && config?.siteTitle) document.title = config.siteTitle;
@@ -24,6 +26,7 @@ export default function LandingRoute({ always = false }: { always?: boolean }) {
 
   const home = user?.role === "superadmin" ? "/admin" : "/dashboard";
   if (isLoading) return <PageLoader />;
+  if (branded) return <Redirect to={user ? home : "/login"} />;
   if (user && !always) return <Redirect to={home} />;
   if (q.isLoading) return <PageLoader />;
   if (!page?.enabled) return <Redirect to={user ? home : "/login"} />;

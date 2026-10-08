@@ -13,6 +13,7 @@ import {
   KeyRound,
   LayoutGrid,
   PanelsTopLeft,
+  Palette,
   ScrollText,
   TicketPercent,
   Gauge,
@@ -63,6 +64,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
   const { data: unread } = useQuery<{ count: number }>({ queryKey: ["/api/conversations/unread-count"], enabled: !isSuper, refetchInterval: 60_000 });
   const { data: counts } = useQuery<{ data: Counts }>({ queryKey: ["/api/admin/users/counts"], enabled: isSuper, refetchInterval: 60_000 });
   const c = counts?.data;
+  const { data: wl } = useQuery<{ data: { allowed: boolean } }>({ queryKey: ["/api/white-label"], enabled: user?.role === "admin", staleTime: 5 * 60_000 });
   const { data: support } = useQuery<{ data: Record<string, number> }>({ queryKey: ["/api/superadmin/support-requests/counts"], enabled: isSuper, refetchInterval: 60_000 });
   // A new report reaches the superadmin as a notification; refresh the open count with it.
   useSocketEvent("notification:new", () => {
@@ -101,6 +103,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
         items: [
           { href: "/system-settings", label: t("nav.systemSettings"), icon: <SlidersHorizontal className="h-4 w-4" /> },
           { href: "/landing-page", label: t("nav.landingPage"), icon: <PanelsTopLeft className="h-4 w-4" /> },
+          { href: "/white-label-admin", label: t("nav.whiteLabel"), icon: <Palette className="h-4 w-4" /> },
           { href: "/logs", label: t("nav.logs"), icon: <ScrollText className="h-4 w-4" /> },
           {
             href: "/extra",
@@ -146,6 +149,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
             { href: "/campaigns", label: t("nav.campaigns"), permission: "campaigns:view" },
             { href: "/templates", label: t("nav.templates"), permission: "templates:view" },
             { href: "/inbox", label: t("nav.inbox"), permission: "inbox:view", badge: unread?.count },
+            { href: "/widget", label: t("nav.widget"), permission: "settings:view" },
             { href: "/settings", label: t("nav.channelSettings"), permission: "settings:view" },
           ],
         },
@@ -180,6 +184,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
           ? [
               { href: "/developers/api-keys", label: t("nav.apiKeys"), icon: <KeyRound className="h-4 w-4" /> },
               { href: "/developers/webhooks", label: t("nav.webhooks"), icon: <Webhook className="h-4 w-4" /> },
+              ...(wl?.data.allowed ? [{ href: "/white-label", label: t("nav.whiteLabel"), icon: <Palette className="h-4 w-4" /> }] : []),
             ]
           : []),
         { href: "/support", label: t("nav.reportRequest"), icon: <Bug className="h-4 w-4" /> },

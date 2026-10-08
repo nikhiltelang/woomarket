@@ -105,8 +105,10 @@ export const users = mysqlTable(
     accessLevel: int("access_level"),
     /** Set while two-factor authentication is on (secret in user_two_factor). */
     twoFactorEnabledAt: ts("two_factor_enabled_at"),
+    /** Agency (white-label owner) that this tenant signed up through. */
+    resellerId: char("reseller_id", { length: 36 }).references((): AnyMySqlColumn => users.id, { onDelete: "set null" }),
   },
-  (t) => [index("users_created_by_idx").on(t.createdBy), index("users_role_idx").on(t.role)],
+  (t) => [index("users_created_by_idx").on(t.createdBy), index("users_role_idx").on(t.role), index("users_reseller_idx").on(t.resellerId)],
 );
 
 export const session = mysqlTable("session", {
@@ -278,6 +280,8 @@ export const conversations = mysqlTable(
     /** AI summary, sentiment and intent (see shared/ai.ts), refreshed on demand. */
     aiInsights: json("ai_insights").$type<Record<string, unknown>>(),
     aiAnalyzedAt: ts("ai_analyzed_at"),
+    /** Website chat (type "web"): what the visitor told us and where they chatted from. */
+    webVisitor: json("web_visitor").$type<{ name?: string | null; email?: string | null; phone?: string | null; page?: string | null; origin?: string | null; widgetId: string }>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -971,6 +975,8 @@ export const platformAccessLevels = mysqlTable("platform_access_levels", {
   emailEnabled: boolean("email_enabled").default(false),
   prioritySupport: boolean("priority_support").default(false),
   apiAccess: boolean("api_access").default(false),
+  /** May set up a brand and custom domains to resell the platform. */
+  whiteLabel: boolean("white_label").default(false),
   createdAt: ts("created_at").default(sql`CURRENT_TIMESTAMP(3)`),
   updatedAt: ts("updated_at")
     .default(sql`CURRENT_TIMESTAMP(3)`)
@@ -1261,6 +1267,83 @@ export const tenantSettings = mysqlTable("tenant_settings", {
 });
 
 // ---------------------------------------------------------------------------
+// White-label (agencies reselling the platform)
+// ---------------------------------------------------------------------------
+
+export const brands = mysqlTable("brands", {
+  id: id(),
+  /** The agency (tenant admin) that owns the brand; one brand per agency. */
+  ownerId: char("owner_id", { length: 36 })
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 100 }).notNull(),
+  logo: varchar("logo", { length: 255 }),
+  favicon: varchar("favicon", { length: 255 }),
+  baseColor: varchar("base_color", { length: 7 }).notNull().default("#16a34a"),
+  supportEmail: varchar("support_email", { length: 255 }),
+  supportUrl: varchar("support_url", { length: 500 }),
+  loginTitle: varchar("login_title", { length: 120 }),
+  loginSubtitle: varchar("login_subtitle", { length: 300 }),
+  hidePoweredBy: boolean("hide_powered_by").notNull().default(false),
+  /** New accounts may sign up on the brand's domains (they become the agency's clients). */
+  allowSignup: boolean("allow_signup").notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+export type Brand = InferSelectModel<typeof brands>;
+
+export const brandDomains = mysqlTable(
+  "brand_domains",
+  {
+    id: id(),
+    brandId: char("brand_id", { length: 36 })
+      .notNull()
+      .references(() => brands.id, { onDelete: "cascade" }),
+    /** Lower-case host name, e.g. app.agency.com */
+    domain: varchar("domain", { length: 253 }).notNull().unique(),
+    verificationToken: varchar("verification_token", { length: 64 }).notNull(),
+    verifiedAt: ts("verified_at"),
+    lastCheckedAt: ts("last_checked_at"),
+    lastError: varchar("last_error", { length: 300 }),
+    /** Superadmin can switch a domain off. */
+    disabled: boolean("disabled").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("brand_domains_brand_idx").on(t.brandId)],
+);
+export type BrandDomain = InferSelectModel<typeof brandDomains>;
+
+// ---------------------------------------------------------------------------
+// Website chat widget
+// ---------------------------------------------------------------------------
+
+export const chatWidgets = mysqlTable(
+  "chat_widgets",
+  {
+    /** Public id used in the embed code. */
+    id: id(),
+    /** Tenant id. */
+    userId: char("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Inbox (WhatsApp number) where website chats land. */
+    channelId: char("channel_id", { length: 36 })
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    settings: json("settings").$type<Record<string, unknown>>().notNull(),
+    allowedOrigins: json("allowed_origins").$type<string[]>().notNull(),
+    createdBy: char("created_by", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("chat_widgets_user_idx").on(t.userId)],
+);
+export type ChatWidget = InferSelectModel<typeof chatWidgets>;
+
+// ---------------------------------------------------------------------------
 // Scheduled reports
 // ---------------------------------------------------------------------------
 
@@ -1506,6 +1589,9 @@ export const MANAGED_TABLES = [
   "webhook_deliveries",
   "ai_usage",
   "report_schedules",
+  "chat_widgets",
+  "brands",
+  "brand_domains",
 ] as const;
 
 // ---------------------------------------------------------------------------

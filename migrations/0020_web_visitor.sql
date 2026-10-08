@@ -1,0 +1,1 @@
+ALTER TABLE `conversations` ADD `web_visitor` json;

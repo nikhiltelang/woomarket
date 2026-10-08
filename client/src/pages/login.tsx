@@ -54,6 +54,12 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
             <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">{children}</div>
             <div className="mt-6">
               <PolicyLinks />
+              {config?.brand?.poweredBy && <p className="mt-3 text-center text-xs text-fg-muted">Powered by {config.brand.poweredBy}</p>}
+              {config?.brand?.supportEmail && (
+                <p className="mt-1 text-center text-xs text-fg-muted">
+                  Need help? <a className="text-primary hover:underline" href={`mailto:${config.brand.supportEmail}`}>{config.brand.supportEmail}</a>
+                </p>
+              )}
             </div>
           </div>
         </div>

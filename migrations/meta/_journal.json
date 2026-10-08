@@ -134,6 +134,27 @@
       "when": 1791406264205,
       "tag": "0018_report_schedules",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1791407372918,
+      "tag": "0019_chat_widgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1791407410214,
+      "tag": "0020_web_visitor",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1791462232901,
+      "tag": "0021_white_label",
+      "breakpoints": true
     }
   ]
 }

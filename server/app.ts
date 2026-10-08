@@ -1,4 +1,7 @@
 import express, { type Express, type RequestHandler } from "express";
+import { resolveBrand } from "./services/white-label.service";
+import { WIDGET_JS } from "./widget/script";
+import { widgetPublicRoutes } from "./routes/widget.routes";
 import session from "express-session";
 import helmet from "helmet";
 import { randomUUID } from "node:crypto";
@@ -76,6 +79,8 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
 
   // Stores each API/webhook request and its response for Superadmin → Logs.
   app.use(requestLogger);
+  // White-label: which agency's domain (if any) this request arrived on.
+  app.use(resolveBrand);
 
   app.use(
     express.json({
@@ -119,6 +124,14 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       },
     }),
   );
+  // Website chat widget script, loaded by customers' sites.
+  app.get("/widget.js", (_req, res) => {
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(WIDGET_JS);
+  });
   app.get("/robots.txt", asyncHandler(robotsTxt));
   app.get("/sitemap.xml", asyncHandler(sitemapXml));
 
@@ -126,6 +139,7 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
   app.use(trackingRoutes);
   // Public API: access-key authentication only (no session, no CSRF).
   app.use("/api/v1", publicApiRoutes);
+  app.use("/api/widget", widgetPublicRoutes);
   app.use("/api", authenticate, maintenanceGuard, apiRateLimiter, csrfMiddleware, apiRouter());
   app.use("/api", notFoundApi);
   app.use(errorHandler);

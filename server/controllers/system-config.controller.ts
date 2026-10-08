@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import { usersRepository } from "../repositories/users.repository";
+import { agencyOf, brandsRepository, toPublicBrand } from "../services/white-label.service";
 import { aiSettingsSchema, DEFAULT_AI_MODEL, DEFAULT_AI_MONTHLY_LIMIT } from "@shared/ai";
 import { z } from "zod";
 import {
@@ -54,9 +56,40 @@ export async function getAll(_req: Request, res: Response) {
   });
 }
 
-export async function getPublic(_req: Request, res: Response) {
+export async function getPublic(req: Request, res: Response) {
   res.setHeader("Cache-Control", "no-cache");
-  res.json({ data: await systemConfig.public() });
+  const pub = await systemConfig.public();
+  // White-label: the brand of this domain, else the signed-in client's agency.
+  let brand = req.brand ?? null;
+  const onBrandDomain = Boolean(brand);
+  if (!brand && req.user) {
+    const user = await usersRepository.findById(req.user.id);
+    const agency = user ? await agencyOf(user) : null;
+    brand = agency ? ((await brandsRepository.byOwner(agency)) ?? null) : null;
+  }
+  if (!brand) return res.json({ data: { ...pub, brand: null } });
+  const b = toPublicBrand(brand, pub.siteTitle, onBrandDomain);
+  res.json({
+    data: {
+      ...pub,
+      siteTitle: b.name,
+      tagline: b.loginSubtitle ?? pub.tagline,
+      logo: b.logo,
+      favicon: b.favicon ?? pub.favicon,
+      baseColor: b.baseColor,
+      companyName: b.name,
+      supportEmail: b.supportEmail,
+      ...(onBrandDomain
+        ? {
+            userRegistration: pub.userRegistration && b.allowSignup,
+            googleLogin: false,
+            microsoftLogin: false,
+            frontend: { ...pub.frontend, heroTitle: b.loginTitle ?? undefined, heroSubtitle: b.loginSubtitle ?? undefined, features: [] },
+          }
+        : {}),
+      brand: b,
+    },
+  });
 }
 
 const SECTIONS = {

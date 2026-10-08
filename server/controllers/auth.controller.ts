@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { assertMaySignInHere } from "../services/white-label.service";
 import bcrypt from "bcryptjs";
 import { changePasswordSchema, loginSchema, signupSchema, updateProfileSchema } from "@shared/validation";
 import { ALL_PERMISSIONS } from "@shared/roles";
@@ -87,12 +88,13 @@ export async function login(req: Request, res: Response) {
     log.info({ username, ip: req.ip }, "Failed login");
     throw unauthorized("Invalid username or password");
   }
+  await assertMaySignInHere(req, user);
   await assertCanSignIn(user);
   res.json(await completeSignIn(req, res, user, "password"));
 }
 
 /** Creates a tenant admin with the Free plan and the lowest access level. */
-export async function createTenantAdmin(v: { username: string; email: string; passwordHash: string; firstName?: string | null; lastName?: string | null; emailVerified: boolean }): Promise<User> {
+export async function createTenantAdmin(v: { username: string; email: string; passwordHash: string; firstName?: string | null; lastName?: string | null; emailVerified: boolean; resellerId?: string | null }): Promise<User> {
   const lowest = await levelsRepository.lowest();
   const user = await usersRepository.create({
     username: v.username,
@@ -105,6 +107,7 @@ export async function createTenantAdmin(v: { username: string; email: string; pa
     permissions: [...ALL_PERMISSIONS],
     isEmailVerified: v.emailVerified,
     accessLevel: lowest?.levelNumber ?? null,
+    resellerId: v.resellerId ?? null,
   });
   const free = await billingRepository.findPlanByName("Free");
   if (free) await billingRepository.assign(user.id, free, "annual");
@@ -115,6 +118,7 @@ export async function createTenantAdmin(v: { username: string; email: string; pa
 export async function signup(req: Request, res: Response) {
   const cfg = await systemConfig.get();
   if (!cfg.userRegistration) throw forbidden("New registrations are currently closed.", "REGISTRATION_CLOSED");
+  if (req.brand && !req.brand.allowSignup) throw forbidden(`New sign-ups are closed on ${req.brand.name}. Contact them for an account.`, "REGISTRATION_CLOSED");
   const input = parseBody(signupSchema, req);
   const pub = await systemConfig.public();
   if (pub.agreePolicy && !input.acceptTerms) throw new AppError(400, "Please accept the terms to continue", "TERMS_REQUIRED", { acceptTerms: ["Required"] });
@@ -133,6 +137,8 @@ export async function signup(req: Request, res: Response) {
     firstName: input.firstName,
     lastName: input.lastName,
     emailVerified: !cfg.emailVerification,
+    // Signing up on an agency's domain makes the account the agency's client.
+    resellerId: req.brand?.ownerId ?? null,
   });
   await activityRepository.record(req, user.id, "signup");
 
@@ -153,6 +159,7 @@ export async function verifyEmail(req: Request, res: Response) {
   const { email, code } = parseBody(verifyEmailSchema, req);
   const user = await usersRepository.findByLogin(email);
   if (!user || !(await otpRepository.consume(user.id, code))) throw badRequest("That code is invalid or has expired");
+  await assertMaySignInHere(req, user);
   const verified = (await usersRepository.update(user.id, { isEmailVerified: true }))!;
   if (verified.status !== "active") throw forbidden("Your account is not active.", "ACCOUNT_INACTIVE");
   await activityRepository.record(req, user.id, "email_verified");

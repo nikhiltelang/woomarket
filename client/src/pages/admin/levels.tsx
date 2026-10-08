@@ -32,6 +32,7 @@ const FLAGS = [
   { key: "smsEnabled", label: "SMS marketing" },
   { key: "aiAssistantEnabled", label: "AI assistant" },
   { key: "apiAccess", label: "API access" },
+  { key: "whiteLabel", label: "White-label (own brand & domains)" },
   { key: "prioritySupport", label: "Priority support" },
 ] as const;
 
@@ -52,6 +53,7 @@ const blank = (n: number): FormState => ({
   emailEnabled: true,
   prioritySupport: false,
   apiAccess: false,
+  whiteLabel: false,
 });
 
 function LevelDialog({ level, nextNumber, open, onClose }: { level: Level | null; nextNumber: number; open: boolean; onClose: () => void }) {
