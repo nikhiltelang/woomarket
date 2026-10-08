@@ -52,7 +52,7 @@ export async function sendNotification(input: Input, createdBy: string) {
       let ok = 0;
       for (const r of recipients) {
         try {
-          await sendSystemEmail(r.email, input.title, textToHtml(input.message));
+          await sendSystemEmail(r.email, input.title, textToHtml(input.message), { forUserId: r.id });
           ok++;
         } catch (err) {
           log.warn({ to: r.email, err: (err as Error).message }, "Notification email failed");

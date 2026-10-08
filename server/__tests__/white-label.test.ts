@@ -95,3 +95,19 @@ describe("on a brand domain", () => {
     await request(app).get("/api/white-label/tls-check?domain=unknown.test").expect(404);
   });
 });
+
+describe("system emails", () => {
+  it("go out in the agency's name to its clients, and in the platform's to everyone else", async () => {
+    const mailer = await import("../services/email/mailer");
+    const { sendSystemEmail } = await import("../services/email/system-mail");
+    vi.spyOn(mailer, "resolveSmtp").mockResolvedValue({ source: "simulator" } as never);
+    const { systemConfig } = await import("../services/system-config.service");
+    vi.spyOn(systemConfig, "panel").mockResolvedValue({ name: "Test" } as never);
+    const send = vi.spyOn(mailer, "sendEmail").mockResolvedValue({ messageId: "m", simulated: true });
+    await sendSystemEmail("c@x.test", "Your code", "<p>123456</p>", { forUserId: client.id });
+    expect(send.mock.calls[0][1]).toMatchObject({ senderName: "Agency Pro", replyTo: "help@agency.test" });
+    expect(send.mock.calls[0][1].html).toContain("Agency Pro");
+    await sendSystemEmail("o@x.test", "Your code", "<p>1</p>", { forUserId: outsider.id });
+    expect(send.mock.calls[1][1]).toMatchObject({ senderName: "Test", replyTo: null });
+  });
+});

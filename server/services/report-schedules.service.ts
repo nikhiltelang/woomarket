@@ -94,7 +94,7 @@ ${summary.map((x) => `<p style="margin:0 0 8px">${x}</p>`).join("")}
     const errors: string[] = [];
     for (const to of s.recipients) {
       try {
-        await sendSystemEmail(to, `${s.name}: ${period.from}${period.to !== period.from ? ` to ${period.to}` : ""}`, body, attachments);
+        await sendSystemEmail(to, `${s.name}: ${period.from}${period.to !== period.from ? ` to ${period.to}` : ""}`, body, { attachments, forUserId: s.userId });
         sent++;
       } catch (err) {
         errors.push(`${to}: ${(err as Error).message}`);

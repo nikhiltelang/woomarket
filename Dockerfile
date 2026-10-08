@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends unzip curl && r
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/migrations ./migrations
+# Fonts for PDF reports (Noto Sans, SIL Open Font License).
+COPY --from=build --chown=node:node /app/assets ./assets
 COPY --chown=node:node package.json VERSION ./
 RUN mkdir -p uploads && chown node:node uploads
 USER node

@@ -219,6 +219,8 @@ export const conversationStatusSchema = z.object({ status: z.enum(["open", "pend
 
 export const sendMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string().trim().min(1).max(4096) }),
+  /** Messenger / Instagram: an image (uploaded through /attachments), with optional text after it. */
+  z.object({ type: z.literal("image"), url: z.string().trim().url().max(2000).regex(/^https?:\/\//, "Use an http(s) image link"), caption: z.string().trim().max(1000).optional() }),
   z.object({
     type: z.literal("template"),
     templateId: z.string().uuid(),

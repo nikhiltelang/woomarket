@@ -41,7 +41,8 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/form";
-import { Tabs, useConfirm } from "@/components/ui/overlay";
+import { Tabs, useConfirm, useToast } from "@/components/ui/overlay";
+import { apiRequest } from "@/lib/api";
 import { insertAtCursor, MergeTagButtons } from "@/components/marketing";
 import { AiEmailDraftButton } from "@/components/ai";
 
@@ -370,6 +371,43 @@ function TextWithTags({ id, label, value, onChange, mergeTags, rows = 6, hint }:
   );
 }
 
+/** Uploads an image for the email and hands back its public URL. */
+function ImageUpload({ onUploaded }: { onUploaded: (url: string) => void }) {
+  const toast = useToast();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          if (file.size > 2 * 1024 * 1024) return toast({ title: "Image too large", description: "Use an image up to 2 MB.", variant: "error" });
+          setBusy(true);
+          try {
+            const fd = new FormData();
+            fd.append("image", file);
+            const r = await apiRequest<{ data: { url: string } }>("POST", "/api/email-marketing/images", fd);
+            onUploaded(r.data.url);
+          } catch (err) {
+            toast({ title: "Upload failed", description: (err as Error).message, variant: "error" });
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+      <Button type="button" size="sm" variant="outline" loading={busy} onClick={() => input.current?.click()}>
+        Upload
+      </Button>
+    </>
+  );
+}
+
 const FORMAT_HINT = "**bold**, *italic*, [link text](https://…). A blank line starts a new paragraph.";
 
 function BlockProperties({ block: b, onChange, mergeTags }: { block: Block; onChange: (b: Block) => void; mergeTags: string[] }) {
@@ -417,8 +455,11 @@ function BlockProperties({ block: b, onChange, mergeTags }: { block: Block; onCh
           case "image":
             return (
               <>
-                <Field label="Image URL" htmlFor="bp-is" hint={b.src && !/^https?:\/\//i.test(b.src) ? <span className="text-danger">Use a public https:// image link</span> : "A public https:// link (PNG, JPG or GIF)."}>
-                  <Input id="bp-is" value={b.src} onChange={(e) => set("src", e.target.value)} placeholder="https://…/banner.png" />
+                <Field label="Image" htmlFor="bp-is" hint={b.src && !/^https?:\/\//i.test(b.src) ? <span className="text-danger">Use a public https:// image link</span> : "Upload a PNG, JPG, GIF or WebP (up to 2 MB), or paste a public link."}>
+                  <div className="flex gap-2">
+                    <Input id="bp-is" value={b.src} onChange={(e) => set("src", e.target.value)} placeholder="https://…/banner.png" />
+                    <ImageUpload onUploaded={(url) => set("src", url)} />
+                  </div>
                 </Field>
                 <Field label="Alt text" htmlFor="bp-ia" hint="Shown when images are blocked, and read by screen readers."><Input id="bp-ia" value={b.alt} onChange={(e) => set("alt", e.target.value)} maxLength={300} /></Field>
                 <Field label="Link (optional)" htmlFor="bp-iu" hint={urlHint(b.url)}><Input id="bp-iu" value={b.url} onChange={(e) => set("url", e.target.value)} placeholder="https://" /></Field>
@@ -441,7 +482,12 @@ function BlockProperties({ block: b, onChange, mergeTags }: { block: Block; onCh
                 {b.columns.map((c, i) => (
                   <fieldset key={i} className="space-y-3 rounded-md border border-border p-3">
                     <legend className="px-1 text-xs font-medium">{i === 0 ? "Left" : "Right"} column</legend>
-                    <Field label="Image URL (optional)" htmlFor={`bp-c${i}i`}><Input id={`bp-c${i}i`} value={c.image} onChange={(e) => set("columns", b.columns.map((x, j) => (j === i ? { ...x, image: e.target.value } : x)))} placeholder="https://" /></Field>
+                    <Field label="Image (optional)" htmlFor={`bp-c${i}i`}>
+                      <div className="flex gap-2">
+                        <Input id={`bp-c${i}i`} value={c.image} onChange={(e) => set("columns", b.columns.map((x, j) => (j === i ? { ...x, image: e.target.value } : x)))} placeholder="https://" />
+                        <ImageUpload onUploaded={(url) => set("columns", b.columns.map((x, j) => (j === i ? { ...x, image: url } : x)))} />
+                      </div>
+                    </Field>
                     <TextWithTags id={`bp-c${i}t`} label="Text" value={c.text} rows={4} onChange={(v) => set("columns", b.columns.map((x, j) => (j === i ? { ...x, text: v } : x)))} mergeTags={mergeTags} />
                   </fieldset>
                 ))}

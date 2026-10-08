@@ -101,9 +101,11 @@ describe("exports", () => {
   });
 
   it("renders a PDF", async () => {
-    const pdf = await reportPdf(report, { title: "Weekly report", tenantName: "Demo Shop ✓ नमस्ते" });
+    const pdf = await reportPdf(report, { title: "Weekly report", tenantName: "Demo Shop ✓ नमस्ते ₹500" });
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.length).toBeGreaterThan(2000);
+    // Noto Sans is embedded (subset), so Hindi and "₹" print instead of "?".
+    expect(pdf.toString("latin1")).toMatch(/\/BaseFont \/[A-Z]{6}\+NotoSans/);
   });
 });
 
@@ -117,8 +119,9 @@ describe("scheduled report email", () => {
     const { systemConfig } = await import("../services/system-config.service");
     const { makeSystemConfig, makeUser } = await import("./helpers");
     const sent: { to: string; subject: string; attachments?: { filename: string; contentType: string; content: Buffer }[] }[] = [];
-    vi.spyOn(mail, "sendSystemEmail").mockImplementation(async (to, subject, _html, attachments) => {
-      sent.push({ to, subject, attachments });
+    vi.spyOn(mail, "sendSystemEmail").mockImplementation(async (to, subject, _html, opts) => {
+      expect(opts?.forUserId).toBe("t1");
+      sent.push({ to, subject, attachments: opts?.attachments });
       return { simulated: true };
     });
     const { tenantSettingsRepository } = await import("../services/delivery.service");

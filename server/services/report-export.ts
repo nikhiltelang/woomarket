@@ -1,6 +1,9 @@
 /**
  * Report exports: one CSV per section, or a single PDF with every section.
  */
+import fs from "node:fs";
+import path from "node:path";
+import * as fontkit from "fontkit";
 import PDFDocument from "pdfkit";
 import { formatDuration, pct, SECTION_LABELS, type FullReport, type ReportSection, type ResponseStats } from "@shared/reports";
 
@@ -69,12 +72,43 @@ const INK = "#111827";
 const MUTED = "#6b7280";
 const RULE = "#e5e7eb";
 
-/** Characters outside the PDF standard fonts (WinAnsi) would render as boxes. */
-const pdfText = (s: string) => s.replace(/[^\x20-\x7E\xA0-\xFF–—‘’“”•…]/g, "?");
+// Noto Sans (SIL OFL, assets/fonts) covers Latin, Greek, Cyrillic, Devanagari and "₹". Without the
+// files we fall back to the PDF standard fonts, which only know Western European characters.
+const FONT_DIR = path.resolve(process.cwd(), "assets/fonts");
+const NOTO = { regular: path.join(FONT_DIR, "NotoSans-Regular.ttf"), bold: path.join(FONT_DIR, "NotoSans-Bold.ttf") };
+type CoverageFont = { hasGlyphForCodePoint(cp: number): boolean };
+let coverage: CoverageFont | null | undefined;
+function unicodeFont(): CoverageFont | null {
+  if (coverage === undefined) {
+    try {
+      coverage = fs.existsSync(NOTO.regular) && fs.existsSync(NOTO.bold) ? (fontkit.openSync(NOTO.regular) as unknown as CoverageFont) : null;
+    } catch {
+      coverage = null;
+    }
+  }
+  return coverage;
+}
+
+/** Replaces characters the PDF font can't draw (they'd show as empty boxes) with "?". */
+function pdfText(s: string): string {
+  const font = unicodeFont();
+  if (!font) return s.replace(/[^\x20-\x7E\xA0-\xFF–—‘’“”•…]/g, "?");
+  // Zero-width joiners steer Devanagari shaping and need no glyph of their own.
+  return Array.from(s, (ch) => {
+    const cp = ch.codePointAt(0)!;
+    return cp === 0x200c || cp === 0x200d || font.hasGlyphForCodePoint(cp) ? ch : "?";
+  }).join("");
+}
 
 export async function reportPdf(r: FullReport, meta: { title: string; tenantName: string; channelName?: string | null; brandColor?: string }): Promise<Buffer> {
   const brand = /^#[0-9a-f]{6}$/i.test(meta.brandColor ?? "") ? meta.brandColor! : "#16a34a";
-  const doc = new PDFDocument({ size: "A4", margin: 48, info: { Title: pdfText(meta.title), Author: pdfText(meta.tenantName) } });
+  const doc = new PDFDocument({ size: "A4", margin: 48, info: { Title: meta.title, Author: meta.tenantName } });
+  const unicode = Boolean(unicodeFont());
+  if (unicode) {
+    doc.registerFont("Body", NOTO.regular);
+    doc.registerFont("Body-Bold", NOTO.bold);
+  }
+  const F = unicode ? { regular: "Body", bold: "Body-Bold" } : { regular: "Helvetica", bold: "Helvetica-Bold" };
   const chunks: Buffer[] = [];
   doc.on("data", (c: Buffer) => chunks.push(c));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
@@ -85,7 +119,7 @@ export async function reportPdf(r: FullReport, meta: { title: string; tenantName
   };
   const heading = (t: string) => {
     ensure(60);
-    doc.moveDown(0.8).font("Helvetica-Bold").fontSize(13).fillColor(INK).text(pdfText(t));
+    doc.moveDown(0.8).font(F.bold).fontSize(13).fillColor(INK).text(pdfText(t));
     doc.moveTo(48, doc.y + 3).lineTo(48 + width, doc.y + 3).strokeColor(brand).lineWidth(1.5).stroke();
     doc.moveDown(0.6);
   };
@@ -96,7 +130,7 @@ export async function reportPdf(r: FullReport, meta: { title: string; tenantName
       ensure(rowH + 4);
       const y = doc.y;
       let x = x0;
-      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(9).fillColor(bold ? MUTED : INK);
+      doc.font(bold ? F.bold : F.regular).fontSize(9).fillColor(bold ? MUTED : INK);
       cells.forEach((c, i) => {
         doc.text(pdfText(String(c)), x + 2, y + 4, { width: widths[i] - 4, align: i === 0 ? "left" : "right", lineBreak: false, ellipsis: true });
         x += widths[i];
@@ -114,8 +148,8 @@ export async function reportPdf(r: FullReport, meta: { title: string; tenantName
 
   // Cover
   doc.rect(0, 0, doc.page.width, 6).fill(brand);
-  doc.font("Helvetica-Bold").fontSize(20).fillColor(INK).text(pdfText(meta.title), 48, 40);
-  doc.font("Helvetica").fontSize(10).fillColor(MUTED).text(pdfText(`${meta.tenantName}${meta.channelName ? ` · ${meta.channelName}` : ""}`));
+  doc.font(F.bold).fontSize(20).fillColor(INK).text(pdfText(meta.title), 48, 40);
+  doc.font(F.regular).fontSize(10).fillColor(MUTED).text(pdfText(`${meta.tenantName}${meta.channelName ? ` · ${meta.channelName}` : ""}`));
   doc.text(`${r.query.from} to ${r.query.to} (${r.timezone}) · generated ${new Date(r.generatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC`);
 
   if (r.overview) {
@@ -128,7 +162,7 @@ export async function reportPdf(r: FullReport, meta: { title: string; tenantName
     const chartH = 90;
     ensure(chartH + 40);
     const top = doc.y;
-    doc.font("Helvetica").fontSize(8).fillColor(MUTED).text(`Messages sent per day (all channels) · peak ${max}`, 48, top);
+    doc.font(F.regular).fontSize(8).fillColor(MUTED).text(`Messages sent per day (all channels) · peak ${max}`, 48, top);
     const baseY = top + 14 + chartH;
     doc.moveTo(48, baseY).lineTo(48 + width, baseY).strokeColor(RULE).lineWidth(0.5).stroke();
     const slot = width / Math.max(1, days.length);
@@ -138,7 +172,7 @@ export async function reportPdf(r: FullReport, meta: { title: string; tenantName
       if (h > 0) doc.rect(48 + i * slot + (slot - barW) / 2, baseY - h, barW, h).fill(brand);
     });
     if (days.length) {
-      doc.font("Helvetica").fontSize(7).fillColor(MUTED).text(days[0].day, 48, baseY + 3, { lineBreak: false });
+      doc.font(F.regular).fontSize(7).fillColor(MUTED).text(days[0].day, 48, baseY + 3, { lineBreak: false });
       doc.text(days[days.length - 1].day, 48 + width - 60, baseY + 3, { width: 60, align: "right", lineBreak: false });
     }
     doc.x = 48;
@@ -172,7 +206,7 @@ export async function reportPdf(r: FullReport, meta: { title: string; tenantName
     heading(SECTION_LABELS["response-times"]);
     table(["Measure", "Replies", "Average", "Median", "90% within"], [stat("First response", t.first), stat("All replies", t.all)], [width - 320, 80, 80, 80, 80]);
     table(["Reply time", "Replies", "Share"], t.buckets.map((b) => [b.label, b.count, `${pct(b.count, t.all.count)}%`]), [width - 160, 80, 80]);
-    doc.font("Helvetica").fontSize(9).fillColor(MUTED).text(`Customers still waiting for a reply: ${t.awaiting}.${t.truncated ? " Very busy period: only the first 200,000 messages were analysed." : ""}`);
+    doc.font(F.regular).fontSize(9).fillColor(MUTED).text(`Customers still waiting for a reply: ${t.awaiting}.${t.truncated ? " Very busy period: only the first 200,000 messages were analysed." : ""}`);
   }
 
   if (r.team) {

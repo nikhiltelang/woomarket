@@ -93,6 +93,8 @@ class QueueManager {
   private workQueue: Queue | null = null;
   private realtimeOn = false;
   private downSince: number | null = null;
+  /** Database mode has been started at least once (its workers are running or idle by design). */
+  private dbStarted = false;
 
   /** A dedicated connection (BullMQ workers block on theirs), closed when the mode stops. */
   private extra(redis: Redis): Redis {
@@ -137,7 +139,15 @@ class QueueManager {
       this.downSince = null;
       return;
     }
-    // A failed Redis start is retried every reconcile (it may come back).
+    // Waiting for Redis to come back: check it's reachable before stopping the database workers.
+    if (wantRedis && this.mode === "database" && this.dbStarted) {
+      try {
+        await testRedis(s.url!);
+      } catch (err) {
+        this.lastError = `Redis unavailable, using database mode: ${(err as Error).message}`;
+        return;
+      }
+    }
     await this.stopMode();
     if (wantRedis) {
       try {
@@ -157,6 +167,7 @@ class QueueManager {
 
   private async startDatabase() {
     this.mode = "database";
+    this.dbStarted = true;
     this.since = new Date();
     setWakeImpl((kind) => {
       if (kind === "webhooks") webhookWorker.wake();
@@ -176,7 +187,9 @@ class QueueManager {
   private async startRedis(s: QueueSettings) {
     // A one-shot probe first: the long-lived connection below retries forever by design
     // (BullMQ needs that), so its connect() would never fail while Redis is down.
-    await testRedis(s.url!);
+    await testRedis(s.url!).catch((err: Error) => {
+      throw new Error(`Redis not reachable: ${err.message}`);
+    });
     const redis = new IORedis(s.url!, { maxRetriesPerRequest: null, lazyConnect: true, connectTimeout: 5000 });
     let lastWarn = 0;
     redis.on("error", (err) => {
@@ -259,6 +272,7 @@ class QueueManager {
 
   private async stopMode() {
     if (this.mode === "database") {
+      this.dbStarted = false;
       stopScheduler();
       await Promise.allSettled([messageQueueWorker.stop(), marketingWorker.stop(), webhookWorker.stop()]);
       return;
@@ -269,12 +283,14 @@ class QueueManager {
     // With Redis down, closing would wait for it forever: drop the connections first, then
     // close without waiting for running jobs (their rows stay claimed and are recovered later).
     const healthy = this.redis?.status === "ready";
+    log.info({ healthy }, "Stopping Redis mode");
     if (!healthy) {
       this.redis?.disconnect();
       for (const c of this.realtimeClients) c.disconnect();
     }
     await Promise.allSettled(this.workers.map((w) => withTimeout(w.close(!healthy), 5000)));
     await Promise.allSettled(this.queues.map((q) => withTimeout(q.close(), 5000)));
+    log.debug("BullMQ workers and queues closed");
     this.workers = [];
     this.queues = [];
     this.workQueue = null;
@@ -284,9 +300,11 @@ class QueueManager {
     for (const c of this.realtimeClients) c.disconnect();
     this.realtimeClients = [];
     if (this.redis) {
-      await this.redis.del(`${this.prefix}:instance:${this.instance}`).catch(() => {});
+      // Commands queue forever on this connection while Redis is down: never wait long.
+      if (healthy) await withTimeout(this.redis.del(`${this.prefix}:instance:${this.instance}`).catch(() => {}), 2000);
       this.redis.disconnect();
     }
+    log.info("Redis mode stopped");
     this.redis = null;
     this.mode = "database";
   }

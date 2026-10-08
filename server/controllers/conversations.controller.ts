@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import { saveImage } from "../lib/uploads";
+import { publicBaseUrl } from "../lib/tokens";
 import { isSocialType } from "@shared/social";
 import { publicAccount, replyPolicy, socialAccountsRepository } from "../services/social.service";
 import { z } from "zod";
@@ -150,4 +152,13 @@ export async function sendMessage(req: Request, res: Response) {
   const input = parseBody(sendMessageSchema, req);
   const message = await sendConversationMessage(req.user!, channel, conversation, input);
   res.status(201).json({ data: message });
+}
+
+/** POST /api/conversations/:conversationId/attachments (multipart "image") — Messenger / Instagram images. */
+export async function uploadAttachment(req: Request, res: Response) {
+  const { conversation, channel } = await loadConversation(req, req.params.conversationId);
+  if (!isSocialType(conversation.type)) throw badRequest("Images can be sent in Messenger and Instagram conversations only.");
+  if (!req.file) throw badRequest("Choose an image");
+  const url = await saveImage(req.file, `inbox/${channel.createdBy}`);
+  res.status(201).json({ data: { url: `${publicBaseUrl()}${url}` } });
 }

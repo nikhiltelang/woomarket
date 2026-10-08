@@ -1,10 +1,12 @@
 import type { Request, Response } from "express";
+import { saveImage } from "../lib/uploads";
+import { publicBaseUrl } from "../lib/tokens";
 import { abOverview, decideTest } from "../services/ab-test.service";
 import { z } from "zod";
 import { emailCampaignSchema, emailTemplateSchema, marketingStatusSchema, paginationQuery, testEmailSchema } from "@shared/validation";
 import type { EmailCampaign } from "@shared/schema";
 import { paginated, parse, parseBody, parseQuery } from "../lib/http";
-import { conflict, notFound } from "../lib/errors";
+import { badRequest, conflict, notFound } from "../lib/errors";
 import { emailCampaignsRepository, emailTemplatesRepository } from "../repositories/email.repository";
 import { renderDesign, type EmailDesign } from "@shared/email-design";
 import { loadSegment } from "../services/segments.service";
@@ -246,4 +248,12 @@ export async function abDecide(req: Request, res: Response) {
   const state = await decideTest("email", c.id, { winner, by: "manual" });
   await activityRepository.record(req, req.user!.id, "ab_test_decided", { type: `${"email"}_campaign`, id: c.id }, { winner: state.winner });
   res.json({ data: state });
+}
+
+/** POST /api/email-marketing/images (multipart "image") — returns an absolute URL for emails. */
+export async function uploadImage(req: Request, res: Response) {
+  const tenantId = requireTenantId(req.user);
+  if (!req.file) throw badRequest("Choose an image to upload");
+  const url = await saveImage(req.file, `email/${tenantId}`);
+  res.status(201).json({ data: { url: `${publicBaseUrl()}${url}` } });
 }

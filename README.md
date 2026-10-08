@@ -1,6 +1,6 @@
 # WooMarket360
 
-WhatsApp marketing, CRM and team-inbox platform (multi-tenant SaaS).
+WhatsApp, email, SMS, Instagram and Messenger marketing, CRM and shared team inbox (multi-tenant SaaS).
 Node.js 20+ · TypeScript · Express · Socket.IO · Drizzle ORM · MySQL 8 · React 18 · Vite · Tailwind.
 
 ## Web installer (first start)
@@ -48,7 +48,7 @@ The demo tenant has a **simulator** WhatsApp number, contacts, a group and an ap
 inbox and campaigns work end-to-end without Meta credentials. Use *WhatsApp numbers → Simulate incoming*
 to push a customer message into the inbox; recipients whose number ends in `0000` fail on purpose.
 
-Or run everything in Docker: `docker compose up -d --build`.
+Or run everything in Docker: `docker compose up -d --build` (add `--profile redis` for the optional Redis service).
 
 ## Scripts
 
@@ -71,8 +71,11 @@ shared/            schema (Drizzle, MySQL), roles & permissions, zod validators,
 server/
   routes/          URL + middleware chain per module
   controllers/     request handling
-  services/        WhatsApp provider (Meta Cloud API + simulator), webhook handler,
-                   messaging (24h window), campaigns, DB-polling message queue, Socket.IO hub
+  services/        WhatsApp provider (Meta Cloud API + simulator), Meta webhook handler (WhatsApp,
+                   Messenger, Instagram), messaging (24h window), campaigns, email/SMS workers,
+                   outgoing webhooks, AI assistant, reports, chat widget, white-label, Socket.IO hub,
+                   queue/ (database polling or Redis/BullMQ, chosen by the superadmin)
+  widget/          the embeddable website chat widget (/widget.js)
   repositories/    all database access
   middlewares/     auth (session + JWT), RBAC, tenant scoping, CSRF, plan limits, rate limits
   app-update/      in-app updater (see app-update-testing.md)
@@ -135,7 +138,8 @@ with subscription, all; ban with reason, verification toggles, plan and level as
 notification (in-app bell in real time and/or email); Manage levels (per-tenant caps on numbers,
 contacts, campaigns and monthly messages plus feature switches, enforced on top of plans); System
 settings (general, logo & favicon, system configuration switches, notification/SMTP & global email
-template, SEO, frontend content, Google sign-in, languages & translations, cron jobs, policy pages,
+template, SEO, frontend content, Google & Microsoft sign-in, AI assistant, queue & scaling, two-factor
+policy, languages & translations, cron jobs, policy pages,
 maintenance mode, GDPR cookie banner, custom CSS, sitemap.xml, robots.txt); Manage coupons (fixed or
 percentage, lifetime or dated, usage limits; applied when assigning a plan, redemptions counted
 atomically, price/discount/total stored on the subscription); Report & request (tenants and their team
@@ -146,12 +150,96 @@ query, headers, payload, status, response headers and body, request/response tim
 secrets redacted before storage, bodies capped at 64 KB, buffered batch writes, filters and stats, configurable
 retention, body capture and excluded paths, hourly cleanup job).
 
+**Campaign tools:** click tracking with UTM tagging (email links and SMS short links, bot clicks
+ignored), delivery at a local time or each contact's best time, quiet hours in the contact's time
+zone, A/B tests on all three channels (winner picked automatically by open, click, read or reply rate),
+**dynamic segments** (saved rules over contact fields, tags, groups, custom fields and engagement,
+re-evaluated at send time) and a **drag-and-drop email builder** (table-based, mobile-friendly HTML
+generated on the server from the design, image upload).
+
+**Inbox channels:** WhatsApp, **Facebook Messenger and Instagram Direct** (connect a Page under
+WhatsApp marketing → Instagram & Messenger; same Meta webhook as WhatsApp; 24-hour window, optional
+Human Agent tag for 7 days; text and image replies) and the **website chat widget** (one `<script>` tag;
+live chat into the inbox and/or a "Chat on WhatsApp" button with link and QR code; allowed-websites
+list, rate limits, signed visitor tokens).
+
+**AI assistant** (Anthropic Claude, key set by the superadmin, per access level, monthly request limit):
+drafts SMS, WhatsApp template and email copy (email drafts become builder blocks), suggests inbox
+replies, and summarises conversations with sentiment, intent and urgency. Nothing is sent automatically;
+customer text is treated as untrusted data. Without a key, development servers use a simulator.
+
+**Reports:** channel overview, team performance and inbox response times (first response and every
+reply: median, average, 90th percentile, time bands) for any date range in the tenant's time zone;
+PDF (Noto Sans: Latin, Greek, Cyrillic, Devanagari, ₹) and CSV exports; scheduled daily/weekly/monthly
+reports emailed with attachments.
+
+**Security & sign-in:** Google and Microsoft single sign-on (accounts matched by provider id; emails
+only trusted when the provider verifies them), two-factor authentication with authenticator apps and
+recovery codes (the superadmin can require it for the superadmin or all admins, and reset it).
+
+**Integrations:** outgoing **webhooks** for 14 events (messages, contacts, campaigns, email and SMS
+engagement), HMAC-signed, retried for about a day, private addresses blocked; Zapier and Make via catch
+hooks or REST-hook subscriptions on `/api/v1/webhooks`.
+
+**White-label:** on access levels with white-label enabled, agencies set their own name, logo, colours
+and sign-in text and connect custom domains (verified by a DNS TXT record). On those domains sign-in and
+sign-up are branded, only the agency and its clients can sign in, new sign-ups become its clients, and
+system emails go out in the agency's name.
+
 In development, email and SMS fall back to simulators when nothing is configured: emails are captured
 (see `GET /api/email-marketing/simulated-outbox`) and SMS receipts are played back; numbers ending in
 `0000` fail on purpose. Set `EMAIL_SIMULATE=false` to require real SMTP.
 
-Not yet implemented from the technical documentation: automations / flow builder, AI assistant &
-training, chat widget, payment gateways & checkout, KYC, public REST API v1 with API keys,
-installer, Redis/BullMQ.
+## Configuration reference (additions)
+
+Everything in `.env.example` is optional except `DATABASE_URL` and the secrets the installer generates.
+
+| Variable | Purpose |
+|---|---|
+| `APP_URL` | Public base URL. Used in emails, tracking links, OAuth callbacks, widget code and as the CNAME target for agency domains. Set it in production. |
+| `REDIS_URL` | Default Redis connection for Redis/BullMQ mode (the superadmin setting takes precedence). |
+| `MESSAGE_RATE_PER_SECOND` | Redis mode: WhatsApp sends per second per number across all servers (default 40). |
+| `NODE_APP_INSTANCE` | Server number in a cluster. Without Redis only instance `0` runs workers and cron jobs. |
+| `ANTHROPIC_API_KEY` | AI assistant key if not saved in the superadmin settings. |
+| `WHATSAPP_GRAPH_URL` / `WHATSAPP_API_VERSION` | Meta Graph API base (also used for Messenger and Instagram). |
+| `WEBHOOK_ALLOW_PRIVATE_URLS` | Development only: let outgoing webhooks reach localhost and private networks. |
+| `DEV_ALLOWED_HOSTS` | Development only: extra host names the Vite dev server accepts (testing agency domains). |
+
+## Running several servers
+
+1. Run Redis (`docker compose --profile redis up -d`, or a managed Redis; `rediss://` for TLS).
+2. In *Superadmin → System settings → Queue & scaling*, turn on Redis mode and enter the URL
+   (*Test connection* first). Servers switch within 15 seconds, no restart.
+3. Start more app servers behind your load balancer, each with a different `NODE_APP_INSTANCE`.
+
+In Redis mode every server sends; rows are claimed atomically in MySQL (the source of truth), cron
+jobs run once per interval across the cluster, WhatsApp sends share a per-number rate limit and live
+inbox events reach users on any server. If Redis becomes unreachable for 30 seconds, servers fall back
+to database polling (instance 0 works) and return to Redis mode when it's back. The status card shows
+the servers, queues and Redis memory.
+
+## Agency domains (white-label) in production
+
+Agencies point a CNAME at your `APP_URL` host and prove ownership with a TXT record. Serve their
+domains through a reverse proxy that issues certificates on demand and asks the app first, e.g. Caddy:
+
+```
+{
+  on_demand_tls {
+    ask http://127.0.0.1:3000/api/white-label/tls-check
+  }
+}
+https:// {
+  tls { on_demand }
+  reverse_proxy 127.0.0.1:3000
+}
+```
+
+`/api/white-label/tls-check?domain=…` answers 200 only for verified, enabled agency domains.
+
+## Not yet implemented
+
+From the technical documentation: WhatsApp chatbot and auto-replies, automation flows, Embedded Signup
+(and Coexistence), payment gateways and self-serve checkout, KYC, and a unified contact timeline.
 The schema already reserves their tables (Appendix A of the documentation); `drizzle.config.ts`
 only manages the tables defined in `shared/schema.ts`, so those are never dropped.

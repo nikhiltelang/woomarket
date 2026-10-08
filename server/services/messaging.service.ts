@@ -44,12 +44,18 @@ export async function sendConversationMessage(
   conversation: Conversation,
   input: z.infer<typeof sendMessageSchema>,
 ): Promise<Message> {
+  if (input.type === "image" && !isSocialType(conversation.type)) throw unprocessable("Images can be sent in Messenger and Instagram conversations. On WhatsApp, use a template with an image header.", "IMAGE_NOT_SUPPORTED");
   if (conversation.type === "web") return sendWebReply(user, channel, conversation, input);
   if (isSocialType(conversation.type)) {
-    if (input.type !== "text") throw unprocessable(`${conversation.type === "instagram" ? "Instagram" : "Messenger"} conversations support text replies only.`, "SOCIAL_TEXT_ONLY");
+    if (input.type === "template") throw unprocessable(`${conversation.type === "instagram" ? "Instagram" : "Messenger"} conversations don't use WhatsApp templates.`, "SOCIAL_NO_TEMPLATES");
     const account = conversation.socialAccountId ? await socialAccountsRepository.find(conversation.socialAccountId) : undefined;
     if (!account || !account.enabled) throw unprocessable("This Messenger/Instagram account is disconnected. Reconnect it under Instagram & Messenger.", "SOCIAL_DISCONNECTED");
-    return sendSocialReply(account, conversation, input.text, { id: user.id, username: user.username });
+    const sender = { id: user.id, username: user.username };
+    if (input.type === "text") return sendSocialReply(account, conversation, { text: input.text }, sender);
+    // Messenger image attachments can't carry a caption: the text follows as its own message.
+    const sent = await sendSocialReply(account, conversation, { imageUrl: input.url }, sender);
+    if (input.caption) await sendSocialReply(account, conversation, { text: input.caption }, sender);
+    return sent;
   }
   if (!conversation.contactPhone) throw unprocessable("Conversation has no recipient phone number");
   if (channel.createdBy) await assertMessageQuota(channel.createdBy, 1);
@@ -68,6 +74,8 @@ export async function sendConversationMessage(
     }
     content = input.text;
     send = () => client.sendText(conversation.contactPhone!, input.text);
+  } else if (input.type !== "template") {
+    throw unprocessable("Images can be sent in Messenger and Instagram conversations only.", "IMAGE_NOT_SUPPORTED");
   } else {
     const template = await templatesRepository.findById(input.templateId);
     if (!template || template.channelId !== channel.id) throw notFound("Template");

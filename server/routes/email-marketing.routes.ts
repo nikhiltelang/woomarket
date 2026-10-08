@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { imageUpload } from "../lib/uploads";
 import * as c from "../controllers/email-marketing.controller";
 import { requirePermission, requireRole } from "../middlewares/auth";
 import { requireChannelAccess } from "../middlewares/tenant";
@@ -15,6 +16,8 @@ const view = requirePermission("email:view");
 const send = requirePermission("email:send");
 emailMarketingRoutes.use(requireRole("admin", "team"));
 emailMarketingRoutes.get("/campaigns", view, h(c.listCampaigns));
+// Images for the email builder (stored per tenant, served from /uploads).
+emailMarketingRoutes.post("/images", send, imageUpload.single("image"), h(c.uploadImage));
 emailMarketingRoutes.post("/campaigns", send, requireChannelAccess(), h(c.createCampaign));
 emailMarketingRoutes.get("/campaigns/:id/links", view, h(c.campaignLinks));
 emailMarketingRoutes.get("/campaigns/:id/ab", view, h(c.abTest));

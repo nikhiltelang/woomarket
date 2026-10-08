@@ -1,4 +1,6 @@
 import { systemConfig } from "../system-config.service";
+import { usersRepository } from "../../repositories/users.repository";
+import { agencyOf, brandsRepository } from "../white-label.service";
 import { resolveSmtp, sendEmail, type EmailAttachment } from "./mailer";
 import { escapeHtml, htmlToText } from "./render";
 
@@ -16,15 +18,34 @@ export function textToHtml(text: string): string {
     .join("\n");
 }
 
+export interface SystemEmailOptions {
+  attachments?: EmailAttachment[];
+  /** The account the email is about: an agency's clients get it in the agency's name. */
+  forUserId?: string | null;
+}
+
+/** White-label brand for the user's agency, if any (failures fall back to the platform name). */
+async function brandFor(userId: string | null | undefined): Promise<{ name: string; replyTo: string | null } | null> {
+  if (!userId) return null;
+  try {
+    const user = await usersRepository.findById(userId);
+    const agency = user ? await agencyOf(user) : null;
+    const brand = agency ? await brandsRepository.byOwner(agency) : undefined;
+    return brand ? { name: brand.name, replyTo: brand.supportEmail } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Sends a platform email (verification codes, notifications) through the platform SMTP,
- * wrapped in the superadmin's global email template.
+ * Sends a platform email (verification codes, notifications, reports) through the platform
+ * SMTP, wrapped in the superadmin's global email template.
  */
-export async function sendSystemEmail(to: string, subject: string, bodyHtml: string, attachments?: EmailAttachment[]): Promise<{ simulated: boolean }> {
-  const [s, panel, smtp] = await Promise.all([systemConfig.get(), systemConfig.panel(), resolveSmtp(null)]);
-  const site = s.siteTitle || panel.name;
+export async function sendSystemEmail(to: string, subject: string, bodyHtml: string, opts: SystemEmailOptions = {}): Promise<{ simulated: boolean }> {
+  const [s, panel, smtp, brand] = await Promise.all([systemConfig.get(), systemConfig.panel(), resolveSmtp(null), brandFor(opts.forUserId)]);
+  const site = brand?.name ?? (s.siteTitle || panel.name);
   const template = s.globalEmailTemplate?.trim() ? s.globalEmailTemplate : DEFAULT_TEMPLATE;
   const html = template.replace(/\{\{\s*site_name\s*\}\}/g, escapeHtml(site)).replace(/\{\{\s*message\s*\}\}/g, bodyHtml);
-  const r = await sendEmail(smtp, { to, subject, html, text: htmlToText(bodyHtml), senderName: site, attachments }, null);
+  const r = await sendEmail(smtp, { to, subject, html, text: htmlToText(bodyHtml), senderName: site, replyTo: brand?.replyTo ?? null, attachments: opts.attachments }, null);
   return { simulated: r.simulated };
 }

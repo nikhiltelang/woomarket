@@ -312,7 +312,12 @@ export function replyPolicy(c: Pick<Conversation, "lastIncomingMessageAt">, huma
   return "closed";
 }
 
-export async function sendSocialReply(a: SocialAccount, c: Conversation, text: string, sender: { id: string; username: string }): Promise<Message> {
+export type SocialContent = { text: string } | { imageUrl: string };
+
+export async function sendSocialReply(a: SocialAccount, c: Conversation, content: SocialContent, sender: { id: string; username: string }): Promise<Message> {
+  const image = "imageUrl" in content ? content.imageUrl : null;
+  const text = image ? "[image]" : (content as { text: string }).text;
+  const kind = image ? "image" : "text";
   const policy = replyPolicy(c, a.humanAgentTag);
   if (policy === "closed") {
     throw new AppError(422, `${SOCIAL_LABELS[a.platform as SocialPlatform]} only allows replies within 24 hours of the customer's last message${a.humanAgentTag ? " (7 days with the Human Agent tag)" : ""}. Wait for them to write again.`, "WINDOW_CLOSED");
@@ -322,13 +327,14 @@ export async function sendSocialReply(a: SocialAccount, c: Conversation, text: s
   try {
     if (a.simulated) mid = `m_sim_${crypto.randomUUID()}`;
     else {
-      const body = { recipient: { id: c.sessionId }, messaging_type: policy === "human_agent" ? "MESSAGE_TAG" : "RESPONSE", ...(policy === "human_agent" ? { tag: "HUMAN_AGENT" } : {}), message: { text } };
+      const message = image ? { attachment: { type: "image", payload: { url: image, is_reusable: false } } } : { text };
+      const body = { recipient: { id: c.sessionId }, messaging_type: policy === "human_agent" ? "MESSAGE_TAG" : "RESPONSE", ...(policy === "human_agent" ? { tag: "HUMAN_AGENT" } : {}), message };
       mid = (await graph.call<{ message_id: string }>("POST", `${a.pageId}/messages`, tokenOf(a), body)).message_id;
     }
   } catch (err) {
     const reason = (err as Error).message;
     if (err instanceof GraphError && (err.code === 190 || err.code === 10)) await socialAccountsRepository.update(a.id, { status: "error", lastError: reason.slice(0, 500) });
-    const failed = await messagesRepository.create({ conversationId: c.id, fromUser: false, direction: "outbound", content: text, type: "text", fromType: "agent", messageType: "text", status: "failed", timestamp: now, errorMessage: reason, metadata: { sentBy: sender.id, sentByName: sender.username, platform: a.platform } });
+    const failed = await messagesRepository.create({ conversationId: c.id, fromUser: false, direction: "outbound", content: text, type: kind, fromType: "agent", messageType: kind, mediaUrl: image, status: "failed", timestamp: now, errorMessage: reason, metadata: { sentBy: sender.id, sentByName: sender.username, platform: a.platform } });
     realtime.toChannel(c.channelId, "new_message", { conversationId: c.id, message: failed });
     throw new AppError(502, `${SOCIAL_LABELS[a.platform as SocialPlatform]} rejected the message: ${reason}`, "SEND_FAILED");
   }
@@ -340,9 +346,10 @@ export async function sendSocialReply(a: SocialAccount, c: Conversation, text: s
     fromUser: false,
     direction: "outbound",
     content: text,
-    type: "text",
+    type: kind,
     fromType: "agent",
-    messageType: "text",
+    messageType: kind,
+    mediaUrl: image,
     status: "sent",
     timestamp: now,
     metadata: { sentBy: sender.id, sentByName: sender.username, platform: a.platform, ...(policy === "human_agent" ? { tag: "HUMAN_AGENT" } : {}) },

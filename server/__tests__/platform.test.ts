@@ -96,7 +96,7 @@ describe("sign-up and sign-in rules", () => {
     const sent = vi.spyOn(systemMail, "sendSystemEmail").mockResolvedValue({ simulated: true });
     const res = await request(app).post("/api/auth/login").send({ username: "p_unverified", password: "Passw0rd!" }).expect(403);
     expect(res.body).toMatchObject({ code: "EMAIL_NOT_VERIFIED", details: { email: unverified.email } });
-    expect(sent).toHaveBeenCalledWith(unverified.email, expect.stringContaining("123456"), expect.stringContaining("123456"));
+    expect(sent).toHaveBeenCalledWith(unverified.email, expect.stringContaining("123456"), expect.stringContaining("123456"), { forUserId: unverified.id });
   });
 
   it("verifies a correct code and signs the user in", async () => {

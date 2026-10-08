@@ -16,6 +16,7 @@ import {
   Search,
   Send,
   Globe,
+  Image as ImageIcon,
 } from "lucide-react";
 import type { Contact, Conversation, Message, Template } from "@shared/schema";
 import type { Paginated } from "@shared/api-types";
@@ -163,7 +164,13 @@ function MessageBubble({ m }: { m: Message }) {
             <FileText className="h-3 w-3" /> {meta.campaignName ? `Campaign · ${meta.campaignName}` : "Template"}
           </p>
         )}
-        <p className="break-words whitespace-pre-wrap">{m.content}</p>
+        {m.type === "image" && m.mediaUrl && /^https?:\/\//.test(m.mediaUrl) ? (
+          <a href={m.mediaUrl} target="_blank" rel="noreferrer noopener">
+            <img src={m.mediaUrl} alt="Image" loading="lazy" className="max-h-64 max-w-full rounded-md" />
+          </a>
+        ) : (
+          <p className="break-words whitespace-pre-wrap">{m.content}</p>
+        )}
         <p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-fg-muted">
           {outbound && meta.sentByName && <span>{meta.sentByName} ·</span>}
           <time dateTime={String(m.timestamp ?? m.createdAt)} title={formatDate(m.timestamp ?? m.createdAt)}>
@@ -313,6 +320,23 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
     },
   });
 
+  // Messenger / Instagram: upload the picture, then send it (typed text follows as a caption).
+  const imageInput = useRef<HTMLInputElement>(null);
+  const sendImage = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("image", file);
+      const up = await apiRequest<{ data: { url: string } }>("POST", `/api/conversations/${id}/attachments`, fd);
+      return apiRequest("POST", `/api/conversations/${id}/messages`, { type: "image", url: up.data.url, ...(text.trim() ? { caption: text.trim() } : {}) });
+    },
+    onSuccess: () => setText(""),
+    onError: (err) => toast({ title: "Image not sent", description: (err as Error).message, variant: "error" }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: messagesKey(id) });
+      invalidate();
+    },
+  });
+
   const update = useMutation({
     mutationFn: (body: Record<string, unknown>) => apiRequest("PUT", `/api/conversations/${id}`, body),
     onSuccess: invalidate,
@@ -401,6 +425,26 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
               {c.replyPolicy === "human_agent" && <p className="mb-2 text-xs text-fg-muted">Past 24 hours: replies are sent with Meta's Human Agent tag and must come from a person.</p>}
               <AiReplySuggestions key={id} conversationId={id} onPick={(t) => setText(t)} />
               <div className="flex items-end gap-2">
+                {isSocialType(c.type) && (
+                  <>
+                    <input
+                      ref={imageInput}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!f) return;
+                        if (f.size > 2 * 1024 * 1024) return toast({ title: "Image too large", description: "Use an image up to 2 MB.", variant: "error" });
+                        sendImage.mutate(f);
+                      }}
+                    />
+                    <Button variant="ghost" size="icon" onClick={() => imageInput.current?.click()} loading={sendImage.isPending} aria-label="Send an image">
+                      <ImageIcon className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
                 {c.type !== "web" && !isSocialType(c.type) && (
                   <Button variant="ghost" size="icon" onClick={() => setTemplateOpen(true)} aria-label="Send a template">
                     <FileText className="h-4 w-4" />
@@ -443,7 +487,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
         {isSocialType(c.type) && conv.data.social && (
           <div className="mt-4 rounded-md bg-subtle p-3 text-xs">
             <p className="font-medium">{SOCIAL_LABELS[c.type]} · {conv.data.social.name}</p>
-            <p className="mt-1 text-fg-muted">Text replies only. {conv.data.social.simulated ? "Test connection (simulator)." : ""}</p>
+            <p className="mt-1 text-fg-muted">Text and image replies. {conv.data.social.simulated ? "Test connection (simulator)." : ""}</p>
           </div>
         )}
         {c.type === "web" && c.webVisitor && (

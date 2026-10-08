@@ -77,6 +77,7 @@ async function sendVerificationCode(user: User): Promise<void> {
     user.email,
     `Your verification code: ${code}`,
     `<p style="margin:0 0 12px">Use this code to verify your email address:</p><p style="margin:0 0 12px;font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p><p style="margin:0;color:#6b7280">It expires in 10 minutes. If you didn't request it, ignore this email.</p>`,
+    { forUserId: user.id },
   );
 }
 

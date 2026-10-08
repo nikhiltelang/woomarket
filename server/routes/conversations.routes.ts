@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { imageUpload } from "../lib/uploads";
 import * as c from "../controllers/conversations.controller";
 import { requirePermission } from "../middlewares/auth";
 import { requireChannelAccess } from "../middlewares/tenant";
@@ -13,6 +14,7 @@ conversationRoutes.get("/", view, requireChannelAccess(), h(c.listConversations)
 conversationRoutes.post("/", send, h(c.createConversation));
 conversationRoutes.get("/:conversationId/messages", view, h(c.listMessages));
 conversationRoutes.post("/:conversationId/messages", send, h(c.sendMessage));
+conversationRoutes.post("/:conversationId/attachments", send, imageUpload.single("image"), h(c.uploadAttachment));
 conversationRoutes.post("/:id/pin", view, h(c.pin));
 conversationRoutes.delete("/:id/pin", view, h(c.unpin));
 conversationRoutes.put("/:id/read", view, h(c.markRead));
