@@ -10,7 +10,8 @@ import {
   SendEmailCommand,
   SESv2Client,
 } from "@aws-sdk/client-sesv2";
-import MailComposer from "nodemailer/lib/mail-composer";
+// Explicit file path: Node's ES module loader (the production build) can't import a directory.
+import MailComposer from "nodemailer/lib/mail-composer/index.js";
 
 export interface SesCredentials {
   region: string;
