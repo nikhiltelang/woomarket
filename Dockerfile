@@ -18,6 +18,8 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/migrations ./migrations
 # Fonts for PDF reports (Noto Sans, SIL Open Font License).
 COPY --from=build --chown=node:node /app/assets ./assets
+# Product documentation, served at /docs.
+COPY --from=build --chown=node:node /app/docs ./docs
 COPY --chown=node:node package.json VERSION ./
 RUN mkdir -p uploads && chown node:node uploads
 USER node

@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Bug,
   Building2,
   ChevronDown,
@@ -417,6 +418,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </span>
           <UserCircle className="h-4 w-4 text-fg-muted" />
         </Link>
+        {/* Opens on the part of the docs that fits the reader. */}
+        <a
+          href={user.role === "superadmin" ? "/docs#admin" : "/docs#start"}
+          target="_blank"
+          rel="noopener"
+          className="mt-1 flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm text-fg-muted hover:bg-subtle hover:text-fg"
+        >
+          <BookOpen className="h-4 w-4" /> {t("nav.docs")}
+        </a>
         <button
           onClick={async () => {
             setSigningOut(true);

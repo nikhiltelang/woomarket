@@ -5,6 +5,8 @@ import { widgetPublicRoutes } from "./routes/widget.routes";
 import session from "express-session";
 import helmet from "helmet";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { config, sessionSecret } from "./config";
 import { logger } from "./lib/logger";
 import { authenticate } from "./middlewares/auth";
@@ -136,6 +138,8 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.send(WIDGET_JS);
   });
+  // Product documentation (docs/index.html) for signed-in users; linked from the app menu.
+  app.get("/docs", authenticate, asyncHandler(serveDocs));
   app.get("/robots.txt", asyncHandler(robotsTxt));
   app.get("/sitemap.xml", asyncHandler(sitemapXml));
 
@@ -149,4 +153,23 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
   app.use(errorHandler);
 
   return { app, sessionMiddleware };
+}
+
+const DOCS_FILE = path.resolve(process.cwd(), "docs", "index.html");
+let docsCache: string | null = null;
+
+/** The documentation page: one self-contained HTML file with its own inline styles and script. */
+async function serveDocs(req: express.Request, res: express.Response) {
+  if (!req.user) return res.redirect("/login");
+  if (!docsCache || !config.isProduction) {
+    try {
+      docsCache = await fs.promises.readFile(DOCS_FILE, "utf8");
+    } catch {
+      return res.status(404).send("The documentation isn't included in this installation (docs/index.html).");
+    }
+  }
+  // Its own policy: inline code from this file only, nothing loaded from elsewhere.
+  res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
+  res.setHeader("Cache-Control", "private, no-cache");
+  res.type("html").send(docsCache);
 }

@@ -320,6 +320,7 @@ export const BASE_TRANSLATIONS: Record<string, string> = {
   "nav.whiteLabel": "White-label",
   "nav.landingPage": "Landing page",
   "nav.preferences": "Sending preferences",
+  "nav.docs": "Documentation",
   "nav.signOut": "Sign out",
   "nav.signingOut": "Signing out…",
   "topbar.live": "Live",
