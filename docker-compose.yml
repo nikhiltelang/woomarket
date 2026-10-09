@@ -1,15 +1,46 @@
-# Local / single-host stack: app + MySQL 8.
-#   cp .env.example .env   (set SESSION_SECRET, ENCRYPTION_KEY, MYSQL_* below)
+# Single-host stack: the app in Docker, MySQL 8 outside it (on this machine or another server).
+#   cp .env.example .env   (set SESSION_SECRET, ENCRYPTION_KEY and DATABASE_URL, see below)
 #   docker compose up -d --build
 # The app creates its tables and seeds the superadmin on first start.
 #
+# DATABASE_URL in .env points at your MySQL (8.0.13+, time zone +00:00):
+#   MySQL on this machine:  mysql://USER:PASSWORD@host.docker.internal:3306/woomarket360
+#   MySQL elsewhere:        mysql://USER:PASSWORD@db.example.com:3306/woomarket360
+#
+# Containers restart on their own after a crash or a reboot (restart: always), as long as the
+# Docker service itself starts at boot:  sudo systemctl enable docker
+#
+# Optional MySQL inside Docker instead (set DATABASE_URL=mysql://woomarket360:<MYSQL_PASSWORD>@mysql:3306/woomarket360):
+#   docker compose --profile mysql up -d --build
 # Optional Redis (several app servers sharing the work, Superadmin → Queue & scaling):
 #   docker compose --profile redis up -d --build
-# then enter redis://redis:6379/0 as the Redis URL (or set REDIS_URL below).
+# then enter redis://redis:6379/0 as the Redis URL (or set REDIS_URL in .env).
 services:
+  app:
+    build: .
+    restart: always
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+    # Lets the container reach MySQL running on the host as "host.docker.internal" (Linux too).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      # Only waited for when the optional "mysql" profile is used.
+      mysql:
+        condition: service_healthy
+        required: false
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads_data:/app/uploads
+
   mysql:
     image: mysql:8.4
-    restart: unless-stopped
+    profiles: ["mysql"]
+    restart: always
     environment:
       MYSQL_DATABASE: woomarket360
       MYSQL_USER: woomarket360
@@ -29,7 +60,7 @@ services:
   redis:
     image: redis:7-alpine
     profiles: ["redis"]
-    restart: unless-stopped
+    restart: always
     # Queue state only (messages live in MySQL): append-only file so restarts keep scheduled jobs.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     volumes:
@@ -39,24 +70,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
-
-  app:
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      HOST: 0.0.0.0
-      DATABASE_URL: mysql://woomarket360:${MYSQL_PASSWORD:-woomarket360}@mysql:3306/woomarket360
-      # REDIS_URL: redis://redis:6379/0   # with --profile redis; or set it in Superadmin → Queue & scaling
-    depends_on:
-      mysql:
-        condition: service_healthy
-    ports:
-      - "3000:3000"
-    volumes:
-      - uploads_data:/app/uploads
 
 volumes:
   mysql_data:
