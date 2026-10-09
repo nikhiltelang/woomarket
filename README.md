@@ -1,6 +1,10 @@
 # WooMarket360
 
 WhatsApp, email, SMS, Instagram and Messenger marketing, CRM and shared team inbox (multi-tenant SaaS).
+
+**Full documentation:** open [`docs/index.html`](docs/index.html) in a browser (works offline): installation,
+deployment (VPS, Docker, Hostinger), configuration, the superadmin and user guides, integrations, the API
+and webhooks, the developer guide and troubleshooting.
 Node.js 20+ · TypeScript · Express · Socket.IO · Drizzle ORM · MySQL 8 · React 18 · Vite · Tailwind.
 
 ## Web installer (first start)
@@ -286,7 +290,5 @@ https:// {
 
 ## Not yet implemented
 
-From the technical documentation: WhatsApp chatbot and auto-replies, automation flows, Embedded Signup
-(and Coexistence), payment gateways and self-serve checkout, KYC, and a unified contact timeline.
-The schema already reserves their tables (Appendix A of the documentation); `drizzle.config.ts`
-only manages the tables defined in `shared/schema.ts`, so those are never dropped.
+KYC (identity verification of tenants) from the technical documentation. Its tables are reserved in the
+schema; `drizzle.config.ts` only manages the tables defined in `shared/schema.ts`, so they are never dropped.
